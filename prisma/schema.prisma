@@ -1,0 +1,975 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ──────────────────────────────────────────────────────────────────
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// ─── AUTH / USERS ───────────────────────────────────────────────────────────
+
+model User {
+  id           String       @id @default(uuid())
+  firstName    String
+  lastName     String
+  password     String?
+  email        String       @unique
+  gender       String       @default("unspecified")
+  phoneNumber  String       @unique
+  providerId   String?
+  authProvider AuthProvider @default(EMAIL)
+  role         UserRole     @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jwt JWT?
+
+  // CRM profile link
+  profile Profile?
+}
+
+model JWT {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @unique
+  secret    String
+  createdAt DateTime @default(now())
+}
+
+// ─── CRM PROFILES ───────────────────────────────────────────────────────────
+
+model Profile {
+  id                    String   @id @default(uuid())
+  email                 String
+  fullName              String
+  phone                 String?  @default("")
+  providerId            String?
+  authProvider          String?
+  role                  String   @default("salesman")
+  commissionRate        Decimal  @default(5.0) @db.Decimal(10, 2)
+  shouldChangePassword  Boolean  @default(false)
+  currentOrganizationId String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Link to auth user (optional)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String? @unique
+
+  // Organization created by this profile
+  organizationsCreated Organization[] @relation("OrgCreatedBy")
+
+  // Memberships
+  organizationMembers OrganizationMember[]
+
+  // Contacts
+  contactsAssigned  Contact[] @relation("ContactAssignedTo")
+  contactsCreated   Contact[] @relation("ContactCreatedBy")
+  contactNotesCreated ContactNote[] @relation("NoteCreatedBy")
+  fileLinksCreated  FileLink[] @relation("FileLinkCreatedBy")
+
+  // Companies
+  assignedCompanies  Company[] @relation("CompanyAssignee")
+  createdCompanies   Company[] @relation("CompanyCreatedBy")
+
+  // Leads
+  leadsAssigned Lead[] @relation("LeadAssignedTo")
+  leadsCreated  Lead[] @relation("LeadCreatedBy")
+  leadEventsCreated LeadEvent[] @relation("LeadEventCreatedBy")
+  leadStageHistoryCreated LeadStageHistory[] @relation("StageHistoryCreatedBy")
+
+  // Projects
+  projectsLead    Project[] @relation("ProjectLead")
+  projectsCreated Project[] @relation("ProjectCreatedBy")
+  projectPhasesCreated ProjectPhase[] @relation("PhaseCreatedBy")
+  projectTasksAssigned ProjectTask[] @relation("ProjectTaskAssignedTo")
+  projectTasksCreated  ProjectTask[] @relation("ProjectTaskCreatedBy")
+  projectTeamMembers   ProjectTeamMember[]
+
+  // Tasks
+  tasksAssigned Task[] @relation("TaskAssignedTo")
+  tasksCreated  Task[] @relation("TaskCreatedBy")
+  taskCommentsCreated TaskComment[] @relation("TaskCommentCreatedBy")
+  taskLinksCreated    TaskLink[]    @relation("TaskLinkCreatedBy")
+
+  // Time entries
+  timeEntries TimeEntry[]
+
+  // Calendar
+  calendarEventsCreated CalendarEvent[] @relation("CalendarEventCreatedBy")
+
+  // Audit
+  auditLogs AuditLog[]
+
+  // Invoices
+  invoicesCreated Invoice[] @relation("InvoiceCreatedBy")
+
+  // Shares
+  sharesCreated ProjectShare[] @relation("ShareCreatedBy")
+
+  // Tags
+  tagsCreated Tag[] @relation("TagCreatedBy")
+
+  @@map("profiles")
+}
+
+// ─── ORGANIZATIONS ──────────────────────────────────────────────────────────
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String?
+  logoUrl     String?
+  colorScheme String?  @default("purple")
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creator Profile? @relation("OrgCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  members          OrganizationMember[]
+  companies        Company[]
+  contacts         Contact[]
+  leads            Lead[]
+  leadEvents       LeadEvent[]
+  projects         Project[]
+  tasks            Task[]
+  projectTasks     ProjectTask[]
+  gitMetrics       GitMetric[]
+  gitCommits       GitCommit[]
+  projectRepos     ProjectRepo[]
+  emailNotifications EmailNotification[]
+  taskComments     TaskComment[]
+  taskLinks        TaskLink[]
+  invoices         Invoice[]
+  timeEntries      TimeEntry[]
+  calendarEvents   CalendarEvent[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  pipelines        Pipeline[]
+  projectShares    ProjectShare[]
+  tags             Tag[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           String   @default("member")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profile      Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("organization_members")
+}
+
+// ─── CONTACTS ───────────────────────────────────────────────────────────────
+
+model Contact {
+  id             String   @id @default(uuid())
+  name           String
+  email          String?  @default("")
+  phone          String?  @default("")
+  company        String?  @default("")
+  category       String?  @default("prospect")
+  role           String?  @default("")
+  leadSource     String?  @default("")
+  city           String?  @default("")
+  country        String?  @default("")
+  website        String?  @default("")
+  totalRevenue   Decimal  @default(0) @db.Decimal(12, 2)
+  companyId      String?
+  assignedTo     String?
+  createdBy      String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  assignee     Profile?      @relation("ContactAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator      Profile?      @relation("ContactCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyRef   Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  notes    ContactNote[]
+  fileLinks FileLink[]
+  leads    Lead[]
+  tasks    Task[]         @relation("TaskContact")
+  invoices Invoice[]
+  calendarEvents CalendarEvent[] @relation("CalendarContact")
+
+  @@index([organizationId, deletedAt])
+  @@map("contacts")
+}
+
+model ContactNote {
+  id        String   @id @default(uuid())
+  contactId String
+  note      String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  contact Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  creator Profile? @relation("NoteCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("contact_notes")
+}
+
+model FileLink {
+  id        String   @id @default(uuid())
+  contactId String?
+  leadId    String?
+  companyId String?
+  title     String
+  url       String
+  fileType  String?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  lead    Lead?    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator Profile? @relation("FileLinkCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("file_links")
+}
+
+// ─── COMPANIES ──────────────────────────────────────────────────────────────
+
+model Company {
+  id             String    @id @default(uuid())
+  name           String
+  domain         String?
+  industry       String?
+  size           String?
+  website        String?
+  phone          String?
+  address        String?
+  notes          String?
+  assignedTo     String?
+  createdBy      String?
+  organizationId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee     Profile?     @relation("CompanyAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator      Profile?     @relation("CompanyCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  contacts     Contact[]
+  leads        Lead[]
+  tasks        Task[]       @relation("TaskCompany")
+  fileLinks    FileLink[]
+
+  @@map("companies")
+}
+
+// ─── PIPELINES ──────────────────────────────────────────────────────────────
+
+model Pipeline {
+  id             String   @id @default(uuid())
+  name           String
+  isDefault      Boolean  @default(false)
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stages       PipelineStage[]
+  leads        Lead[]
+
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id         String  @id @default(uuid())
+  pipelineId String
+  name       String
+  slug       String
+  color      String?
+  order      Int
+  category   String  @default("standard") // "standard" | "won" | "lost"
+  weight     Int     @default(50)          // 0-100 probability percentage
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@map("pipeline_stages")
+}
+
+// ─── LEADS ──────────────────────────────────────────────────────────────────
+
+model Lead {
+  id                 String    @id @default(uuid())
+  name               String?
+  details            String?
+  stage              String?   @default("new")
+  pipelineId         String?
+  price              Decimal?  @default(0) @db.Decimal(12, 2)
+  pricingType        String?   @default("flat")
+  paymentDate        DateTime?
+  recurringStartDate DateTime?
+  recurringEndDate   DateTime?
+  nextFollowUp       DateTime?
+  converted          Boolean   @default(false)
+  convertedAt        DateTime?
+  contactId          String?
+  companyId          String?
+  projectId          String?
+  assignedTo         String?
+  createdBy          String?
+  organizationId     String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  pipeline     Pipeline?     @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  assignee     Profile?      @relation("LeadAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator      Profile?      @relation("LeadCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  events       LeadEvent[]
+  stageHistory LeadStageHistory[]
+  tasks        Task[]         @relation("TaskLead")
+  calendarEvents CalendarEvent[] @relation("CalendarLead")
+  fileLinks    FileLink[]
+
+  @@index([organizationId, stage])
+  @@index([pipelineId])
+  @@map("leads")
+}
+
+model LeadEvent {
+  id             String   @id @default(uuid())
+  leadId         String
+  organizationId String
+  eventType      String
+  description    String?
+  createdBy      String?
+  createdAt      DateTime @default(now())
+
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?     @relation("LeadEventCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("lead_events")
+}
+
+model LeadStageHistory {
+  id              String    @id @default(uuid())
+  leadId          String
+  stage           String
+  enteredAt       DateTime  @default(now())
+  exitedAt        DateTime?
+  durationSeconds Int?
+  createdBy       String?
+
+  lead    Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  creator Profile? @relation("StageHistoryCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("lead_stage_history")
+}
+
+// ─── PROJECTS ───────────────────────────────────────────────────────────────
+
+model Project {
+  id                 String    @id @default(uuid())
+  name               String
+  description        String?   @default("")
+  status             String?   @default("Not Started")
+  complexity         String?
+  price              Decimal?  @default(0) @db.Decimal(12, 2)
+  pricingType        String?   @default("flat")
+  revenue            Decimal?  @default(0) @db.Decimal(12, 2)
+  paymentDate        DateTime?
+  recurringStartDate DateTime?
+  recurringEndDate   DateTime?
+  commissionPaid     Boolean   @default(false)
+  totalHours         Decimal?  @default(0) @db.Decimal(10, 2)
+  prd                String?
+  startDate          DateTime?
+  endDate            DateTime?
+  repositoryUrl      String?
+  repositoryName     String?
+  githubOwner        String?
+  defaultBranch      String?   @default("main")
+  productionUrl      String?
+  monitorApiKey      String?
+  lastGitSyncAt      DateTime?
+  projectLeadId      String?
+  createdBy          String?
+  organizationId     String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  projectLead  Profile?      @relation("ProjectLead", fields: [projectLeadId], references: [id], onDelete: SetNull)
+  creator      Profile?      @relation("ProjectCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  phases       ProjectPhase[]
+  tasks        ProjectTask[]
+  teamMembers  ProjectTeamMember[]
+  milestones   ProjectMilestone[]
+  phaseBranches ProjectPhaseBranch[]
+  gitMetrics   GitMetric[]
+  gitCommits   GitCommit[]
+  repos        ProjectRepo[]
+  leads        Lead[]
+  generalTasks Task[]        @relation("TaskProject")
+  invoices     Invoice[]
+  timeEntries  TimeEntry[]   @relation("TimeEntryProject")
+  calendarEvents CalendarEvent[] @relation("CalendarProject")
+  shares          ProjectShare[]
+  monitorEvents   MonitorEvent[]
+  healthChecks    HealthCheck[]
+
+  @@map("projects")
+}
+
+// ─── CLIENT PORTAL SHARES ───────────────────────────────────────────────────
+
+model ProjectShare {
+  id             String    @id @default(uuid())
+  projectId      String
+  organizationId String
+  shareToken     String    @unique
+  clientEmail    String?
+  clientName     String?
+  permissions    String    @default("view,comment")
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?      @relation("ShareCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("project_shares")
+}
+
+model ProjectPhase {
+  id             String    @id @default(uuid())
+  projectId      String
+  name           String
+  description    String?
+  status         String?   @default("active")
+  orderIndex     Int       @default(0)
+  startDate      DateTime?
+  endDate        DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator  Profile?      @relation("PhaseCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  tasks    ProjectTask[]
+  branches ProjectPhaseBranch[]
+
+  @@map("project_phases")
+}
+
+model ProjectTask {
+  id             String    @id @default(uuid())
+  projectId      String
+  phaseId        String?
+  organizationId String
+  title          String
+  description    String?
+  conclusion     String?
+  status         String?   @default("TODO")
+  priority       String?   @default("MEDIUM")
+  orderIndex     Int       @default(0)
+  startDate      DateTime?
+  dueDate        DateTime?
+  completedAt    DateTime?
+  assignedTo     String?
+  createdBy      String?
+  createdByGuest Boolean   @default(false)
+  guestEmail     String?
+  updatedByGuest Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase        ProjectPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee     Profile?      @relation("ProjectTaskAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator      Profile?      @relation("ProjectTaskCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  comments     TaskComment[] @relation("ProjectTaskComments")
+  links        TaskLink[]    @relation("ProjectTaskLinks")
+  emailNotifications EmailNotification[] @relation("ProjectTaskEmailNotif")
+  timeEntries  TimeEntry[]   @relation("TimeEntryProjectTask")
+  taskTags     ProjectTaskTag[]
+
+  @@index([projectId, status])
+  @@map("project_tasks")
+}
+
+// ─── TAGS ───────────────────────────────────────────────────────────────────
+
+model Tag {
+  id             String    @id @default(uuid())
+  name           String
+  nameLower      String    @unique // lowercase normalized for uniqueness
+  color          String?
+  organizationId String
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?     @relation("TagCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  taskTags     ProjectTaskTag[]
+
+  @@map("tags")
+}
+
+model ProjectTaskTag {
+  projectTaskId String
+  tagId         String
+
+  projectTask ProjectTask @relation(fields: [projectTaskId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([projectTaskId, tagId])
+  @@map("project_task_tags")
+}
+
+// ─── AI CHAT MEMORY ─────────────────────────────────────────────────────────
+
+model AiChatMessage {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           String   // "user" | "assistant"
+  content        String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, userId, createdAt])
+  @@map("ai_chat_messages")
+}
+
+model ProjectTeamMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("project_team_members")
+}
+
+model ProjectMilestone {
+  id          String    @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  dueDate     DateTime?
+  completed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_milestones")
+}
+
+model ProjectPhaseBranch {
+  id         String   @id @default(uuid())
+  projectId  String
+  phaseId    String
+  branchName String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase   ProjectPhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, phaseId, branchName])
+  @@map("project_phase_branches")
+}
+
+// ─── MONITOR ────────────────────────────────────────────────────────────────
+
+model MonitorEvent {
+  id         String   @id @default(uuid())
+  projectId  String
+  type       String   // heartbeat, error, deploy
+  payload    Json     @default("{}")
+  receivedAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, type, receivedAt])
+  @@map("monitor_events")
+}
+
+model HealthCheck {
+  id             String   @id @default(uuid())
+  projectId      String
+  statusCode     Int?
+  responseTimeMs Int?
+  isUp           Boolean
+  errorMessage   String?
+  checkedAt      DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, checkedAt])
+  @@map("health_checks")
+}
+
+// ─── GIT ────────────────────────────────────────────────────────────────────
+
+model ProjectRepo {
+  id              String    @id @default(uuid())
+  projectId       String
+  organizationId  String
+  label           String?   // user-friendly: "Backend", "Frontend", "Mobile"
+  githubOwner     String
+  repositoryName  String
+  repositoryUrl   String?
+  defaultBranch   String?   @default("main")
+  lastGitSyncAt   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  gitMetrics   GitMetric[]
+  gitCommits   GitCommit[]
+
+  @@unique([projectId, githubOwner, repositoryName])
+  @@index([projectId])
+  @@map("project_repos")
+}
+
+model GitMetric {
+  id                String    @id @default(uuid())
+  projectId         String
+  projectRepoId     String?
+  repositoryUrl     String?
+  branchName        String
+  commitsCount      Int       @default(0)
+  lastCommitSha     String?
+  lastCommitDate    DateTime?
+  lastCommitMessage String?
+  lastCommitAuthor  String?
+  pullRequestsCount Int       @default(0)
+  openIssuesCount   Int       @default(0)
+  closedIssuesCount Int       @default(0)
+  organizationId    String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectRepo  ProjectRepo?  @relation(fields: [projectRepoId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([projectRepoId, branchName])
+  @@index([projectId])
+  @@map("git_metrics")
+}
+
+model GitCommit {
+  id            String    @id @default(uuid())
+  projectId     String
+  projectRepoId String?
+  organizationId String
+  commitSha     String
+  commitMessage String?
+  commitAuthor  String?
+  commitDate    DateTime?
+  branchName    String?
+  filesChanged  Int       @default(0)
+  additions     Int       @default(0)
+  deletions     Int       @default(0)
+  repositoryUrl String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectRepo  ProjectRepo?  @relation(fields: [projectRepoId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([projectRepoId, commitSha])
+  @@index([projectId])
+  @@index([branchName])
+  @@index([commitDate(sort: Desc)])
+  @@map("git_commits")
+}
+
+// ─── TASKS ──────────────────────────────────────────────────────────────────
+
+model Task {
+  id             String    @id @default(uuid())
+  title          String
+  description    String?
+  status         String?   @default("TODO")
+  priority       String?   @default("MEDIUM")
+  progress       Int       @default(0)
+  dueDate        DateTime?
+  reminderDate   DateTime?
+  assignedTo     String?
+  contactId      String?
+  leadId         String?
+  companyId      String?
+  projectId      String?
+  createdBy      String?
+  organizationId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  assignee     Profile?      @relation("TaskAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation("TaskContact", fields: [contactId], references: [id], onDelete: SetNull)
+  lead         Lead?         @relation("TaskLead", fields: [leadId], references: [id], onDelete: SetNull)
+  company      Company?      @relation("TaskCompany", fields: [companyId], references: [id], onDelete: SetNull)
+  project      Project?      @relation("TaskProject", fields: [projectId], references: [id], onDelete: SetNull)
+  creator      Profile?      @relation("TaskCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  comments     TaskComment[] @relation("TaskComments")
+  links        TaskLink[]    @relation("TaskLinks")
+  emailNotifications EmailNotification[] @relation("TaskEmailNotif")
+  timeEntries  TimeEntry[]   @relation("TimeEntryTask")
+
+  @@index([organizationId, status])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id             String   @id @default(uuid())
+  taskId         String?
+  projectTaskId  String?
+  organizationId String
+  content        String
+  imageUrls      String[] @default([])
+  createdBy      String?
+  createdByGuest Boolean  @default(false)
+  guestEmail     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  task         Task?         @relation("TaskComments", fields: [taskId], references: [id], onDelete: Cascade)
+  projectTask  ProjectTask?  @relation("ProjectTaskComments", fields: [projectTaskId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?      @relation("TaskCommentCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("task_comments")
+}
+
+model TaskLink {
+  id             String   @id @default(uuid())
+  taskId         String?
+  projectTaskId  String?
+  organizationId String
+  title          String
+  url            String
+  linkType       String?
+  createdBy      String?
+  createdByGuest Boolean  @default(false)
+  guestEmail     String?
+  createdAt      DateTime @default(now())
+
+  task         Task?         @relation("TaskLinks", fields: [taskId], references: [id], onDelete: Cascade)
+  projectTask  ProjectTask?  @relation("ProjectTaskLinks", fields: [projectTaskId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?      @relation("TaskLinkCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("task_links")
+}
+
+// ─── INVOICES ───────────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String    @id @default(uuid())
+  invoiceNumber  String?
+  organizationId String
+  contactId      String?
+  projectId      String?
+  status         String    @default("DRAFT")
+  issueDate      DateTime?
+  dueDate        DateTime?
+  paidAt         DateTime?
+  paymentMethod  String?
+  subtotal       Decimal?  @default(0) @db.Decimal(12, 2)
+  tax            Decimal?  @default(0) @db.Decimal(12, 2)
+  total          Decimal?  @default(0) @db.Decimal(12, 2)
+  currency       String?   @default("USD")
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  creator      Profile?     @relation("InvoiceCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  items InvoiceItem[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @default(1) @db.Decimal(10, 2)
+  unitPrice   Decimal @default(0) @db.Decimal(12, 2)
+  total       Decimal @default(0) @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_items")
+}
+
+// ─── TIME ENTRIES ───────────────────────────────────────────────────────────
+
+model TimeEntry {
+  id              String    @id @default(uuid())
+  organizationId  String
+  userId          String
+  projectId       String?
+  projectTaskId   String?
+  taskId          String?
+  description     String?
+  startTime       DateTime?
+  endTime         DateTime?
+  durationMinutes Int?
+  billable        Boolean   @default(false)
+  hourlyRate      Decimal?  @db.Decimal(10, 2)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profile      Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project?     @relation("TimeEntryProject", fields: [projectId], references: [id], onDelete: SetNull)
+  projectTask  ProjectTask? @relation("TimeEntryProjectTask", fields: [projectTaskId], references: [id], onDelete: SetNull)
+  task         Task?        @relation("TimeEntryTask", fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("time_entries")
+}
+
+// ─── CALENDAR ───────────────────────────────────────────────────────────────
+
+model CalendarEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  startDate      DateTime
+  endDate        DateTime?
+  allDay         Boolean   @default(false)
+  color          String?
+  contactId      String?
+  leadId         String?
+  projectId      String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation("CalendarContact", fields: [contactId], references: [id], onDelete: SetNull)
+  lead         Lead?        @relation("CalendarLead", fields: [leadId], references: [id], onDelete: SetNull)
+  project      Project?     @relation("CalendarProject", fields: [projectId], references: [id], onDelete: SetNull)
+  creator      Profile?     @relation("CalendarEventCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@map("calendar_events")
+}
+
+// ─── AUDIT ──────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String?
+  entityId       String?
+  entityName     String?
+  details        String?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  profile      Profile?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────────────────────────
+
+model Notification {
+  id             String    @id @default(uuid())
+  organizationId String
+  type           String?
+  title          String
+  body           String?
+  entityType     String?
+  entityId       String?
+  metadata       Json?
+  read           Boolean   @default(false)
+  readAt         DateTime?
+  emailSent      Boolean   @default(false)
+  actorId        String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id               String  @id @default(uuid())
+  userId           String
+  notificationType String
+  channel          String  @default("IN_APP")
+  enabled          Boolean @default(true)
+
+  @@map("notification_preferences")
+}
+
+model EmailNotification {
+  id             String   @id @default(uuid())
+  taskId         String?
+  projectTaskId  String?
+  emailType      String
+  recipientEmail String
+  sentAt         DateTime @default(now())
+  success        Boolean  @default(true)
+  errorMessage   String?
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  task         Task?         @relation("TaskEmailNotif", fields: [taskId], references: [id], onDelete: Cascade)
+  projectTask  ProjectTask?  @relation("ProjectTaskEmailNotif", fields: [projectTaskId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("email_notifications")
+}
