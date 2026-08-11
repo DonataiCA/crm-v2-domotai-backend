@@ -7,6 +7,11 @@ import crypto from 'crypto';
 import { logAudit } from '../utils/audit';
 import { notify } from '../utils/notify';
 import { syncRepo, syncOneRepo, GitHubError } from '../utils/github';
+import {
+    isInvertedDateRange,
+    PHASE_DATE_RANGE_MESSAGE,
+    TASK_DATE_RANGE_MESSAGE,
+} from '../validators/project.validator';
 
 export const ProjectController = {
     index: async (req: Request, res: Response) => {
@@ -179,6 +184,16 @@ export const ProjectController = {
             if (data.startDate !== undefined) data.startDate = data.startDate ? new Date(data.startDate as string) : null;
             if (data.endDate !== undefined) data.endDate = data.endDate ? new Date(data.endDate as string) : null;
 
+            // Only checked when the request touches a date, so updates that leave the range
+            // untouched (status changes, renames) keep working on pre-existing records.
+            if (data.startDate !== undefined || data.endDate !== undefined) {
+                const startDate = (data.startDate !== undefined ? data.startDate : existing.startDate) as Date | null;
+                const endDate = (data.endDate !== undefined ? data.endDate : existing.endDate) as Date | null;
+                if (isInvertedDateRange(startDate, endDate)) {
+                    return sendError(res, 400, PHASE_DATE_RANGE_MESSAGE);
+                }
+            }
+
             const phase = await ProjectRepository.updatePhase(req.params.phaseId, data);
             res.json(phase);
         } catch (error) {
@@ -264,6 +279,16 @@ export const ProjectController = {
             if (data.startDate !== undefined) data.startDate = data.startDate ? new Date(data.startDate as string) : null;
             if (data.dueDate !== undefined) data.dueDate = data.dueDate ? new Date(data.dueDate as string) : null;
             if (data.completedAt !== undefined) data.completedAt = data.completedAt ? new Date(data.completedAt as string) : null;
+
+            // Only checked when the request touches a date, so updates that leave the range
+            // untouched (drag between columns, completion) keep working on pre-existing records.
+            if (data.startDate !== undefined || data.dueDate !== undefined) {
+                const startDate = (data.startDate !== undefined ? data.startDate : existing.startDate) as Date | null;
+                const dueDate = (data.dueDate !== undefined ? data.dueDate : existing.dueDate) as Date | null;
+                if (isInvertedDateRange(startDate, dueDate)) {
+                    return sendError(res, 400, TASK_DATE_RANGE_MESSAGE);
+                }
+            }
 
             const task = await ProjectRepository.updateTask(req.params.taskId, data);
             res.json(task);

@@ -13,14 +13,23 @@ export const QA_PASSWORD = 'QaDomotai2026!';
 export const ORG_A = qaId('org:alpha');
 export const ORG_B = qaId('org:beta');
 
-/** Perfiles. OJO: las membresías y los `assignedTo` apuntan a Profile.id. */
-export const P_ADMIN = qaId('profile:admin');
-export const P_SALES_1 = qaId('profile:sales-1');
-export const P_SALES_2 = qaId('profile:sales-2');
-export const P_FREELANCER = qaId('profile:freelancer');
-export const P_VIEWER = qaId('profile:viewer');
-export const P_CLIENT = qaId('profile:client');
-export const P_BETA_ADMIN = qaId('profile:beta-admin');
+/**
+ * Perfiles. OJO: las membresías y los `assignedTo` apuntan a Profile.id.
+ *
+ * Cada Profile.id se deriva de la MISMA etiqueta que su User.id, de modo que
+ * ambos coincidan. No es un detalle cosmético: los controllers guardan
+ * `createdBy: (req as any).userId` (que es User.id) en columnas cuya FK apunta
+ * a Profile.id. En producción funciona porque los perfiles se crearon con el id
+ * del usuario; si el seed usara ids distintos, toda alta desde la interfaz
+ * fallaría con un 500 por violación de clave foránea.
+ */
+export const P_ADMIN = qaId('user:qa.admin@domotai.test');
+export const P_SALES_1 = qaId('user:qa.sales1@domotai.test');
+export const P_SALES_2 = qaId('user:qa.sales2@domotai.test');
+export const P_FREELANCER = qaId('user:qa.freelancer@domotai.test');
+export const P_VIEWER = qaId('user:qa.viewer@domotai.test');
+export const P_CLIENT = qaId('user:qa.client@domotai.test');
+export const P_BETA_ADMIN = qaId('user:qa.beta@contoso.test');
 
 export const PIPELINE_A = qaId('pipeline:alpha');
 
