@@ -143,7 +143,9 @@ export const ProjectController = {
     createPhase: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const userId = (req as any).userId;
+            // ProjectPhase.createdBy is a FK to Profile.id, not User.id — `req.userId` holds the
+            // JWT's User.id and violates the constraint.
+            const profileId = (req as any).user?.profileId;
             const { projectId } = req.params;
 
             const project = await ProjectRepository.findById(projectId, orgId);
@@ -156,7 +158,7 @@ export const ProjectController = {
             const phase = await ProjectRepository.createPhase({
                 ...body,
                 projectId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(phase);
