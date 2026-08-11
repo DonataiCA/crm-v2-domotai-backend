@@ -26,7 +26,10 @@ export const createProjectTaskSchema = z.object({
     description: z.string().max(10000).optional().nullable(),
     status: z.string().max(50).optional(),
     priority: z.string().max(20).optional().nullable(),
-    phaseId: z.string().uuid().optional().nullable(),
+    // A task must always belong to a phase — no unassigned tasks on creation.
+    phaseId: z
+        .string({ required_error: 'Phase is required', invalid_type_error: 'Phase is required' })
+        .uuid('Phase is required'),
     assignedTo: z.string().uuid().optional().nullable(),
     dueDate: z.string().optional().nullable(),
     startDate: z.string().optional().nullable(),
