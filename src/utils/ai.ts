@@ -1,8 +1,22 @@
 import OpenAI from 'openai';
+import { AppError } from './error';
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// El cliente se crea en la primera llamada, no al importar el módulo.
+// Desde openai v7 el constructor lanza si falta la API key, y los imports de
+// app.ts se ejecutan antes de dotenv.config(), así que construirlo aquí
+// tumbaba el servidor entero al arrancar.
+let client: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+    if (!client) {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            throw new AppError('OPENAI_API_KEY is not configured', 503);
+        }
+        client = new OpenAI({ apiKey });
+    }
+    return client;
+}
 
 interface GeneratedTask {
     title: string;
@@ -76,7 +90,7 @@ export async function generateTasksFromPRD(
         ? `\n\nTareas que YA existen (NO las repitas):\n${existingTaskTitles.map(t => `- ${t}`).join('\n')}`
         : '';
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
         model: 'gpt-4o-mini',
         temperature: 0.3,
         response_format: { type: 'json_object' },
@@ -207,7 +221,7 @@ export async function parseChatActions(
         `+3 meses = ${addDays(90)}`,
     ].join(' | ');
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
         // gpt-4o is noticeably better at multi-step counting/arithmetic which matters
         // for date distribution across N tasks. Cost is small for a per-prompt call.
         model: 'gpt-4o',

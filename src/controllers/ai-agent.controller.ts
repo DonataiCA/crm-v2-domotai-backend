@@ -3,7 +3,22 @@ import { sendError } from '../utils/error';
 import { prisma } from '../config/prisma';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Igual que en utils/ai.ts: openai v7 lanza si falta la API key al construir,
+// y los imports corren antes de dotenv.config(). Se crea bajo demanda.
+let client: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+    if (!client) {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            const err = new Error('OPENAI_API_KEY is not configured') as Error & { status?: number };
+            err.status = 503;
+            throw err;
+        }
+        client = new OpenAI({ apiKey });
+    }
+    return client;
+}
 
 export const AiAgentController = {
     chat: async (req: Request, res: Response) => {
@@ -152,7 +167,7 @@ ${crmContext}`,
                 { role: 'user' as const, content: message },
             ];
 
-            const completion = await openai.chat.completions.create({
+            const completion = await getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages,
                 max_tokens: 1000,
