@@ -14,7 +14,8 @@
         "db:migrate": "npx prisma migrate dev",
         "db:deploy": "npx prisma migrate deploy",
         "db:generate": "npx prisma generate",
-        "seed:admin": "ts-node prisma/seeders/admin-seed.ts"
+        "seed:admin": "ts-node prisma/seeders/admin-seed.ts",
+        "seed:qa": "ts-node prisma/seeders/qa/index.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1106.0",
