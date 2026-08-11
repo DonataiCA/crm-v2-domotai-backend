@@ -70,7 +70,9 @@ export const ProjectController = {
     create: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const userId = (req as any).userId;
+            // Project.createdBy is a FK to Profile.id, not User.id — `req.userId` holds the
+            // JWT's User.id and violates the constraint.
+            const profileId = (req as any).user?.profileId;
 
             const body = { ...req.body };
             // Coerce date strings to Date so Prisma accepts them
@@ -81,7 +83,7 @@ export const ProjectController = {
             const project = await ProjectRepository.create({
                 ...body,
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(project);
@@ -201,7 +203,9 @@ export const ProjectController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // ProjectTask.createdBy is a FK to Profile.id, not User.id — `req.userId` holds the
+            // JWT's User.id and violates the constraint.
+            const profileId = (req as any).user?.profileId;
             const { projectId } = req.params;
 
             const project = await ProjectRepository.findById(projectId, orgId);
@@ -216,14 +220,14 @@ export const ProjectController = {
                 ...body,
                 projectId,
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(task);
             await logAudit(req, { action: 'CREATE', entityType: 'ProjectTask', entityId: task.id, entityName: task.title });
 
             if (task.assignedTo) {
-                const creator = await prisma.profile.findUnique({ where: { id: userId }, select: { fullName: true } });
+                const creator = await prisma.profile.findUnique({ where: { id: profileId }, select: { fullName: true } });
                 const projectData = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
                 await notify({
                     organizationId: orgId,
@@ -232,7 +236,7 @@ export const ProjectController = {
                     body: `You have been assigned a new task in ${projectData?.name || 'a project'}`,
                     entityType: 'ProjectTask',
                     entityId: task.id,
-                    actorId: userId,
+                    actorId: profileId,
                     recipientUserId: task.assignedTo,
                     metadata: {
                         taskTitle: task.title,
