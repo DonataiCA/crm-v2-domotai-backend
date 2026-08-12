@@ -3,6 +3,7 @@ import { sendError } from '../utils/error';
 import jwt from 'jsonwebtoken';
 import { JwtRepository } from '../repositories/jwt.repository';
 import { prisma } from '../config/prisma';
+import { isAdminRole, normalizeRole } from '../constants/roles';
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -55,7 +56,10 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
                 select: { id: true, role: true },
             });
             if (profile) {
-                (req as any).user = { profileId: profile.id, role: profile.role };
+                // Se normaliza aquí, en el único punto por el que pasan todas las peticiones
+                // autenticadas: así `req.user.role` siempre es canónico aguas abajo, sin que
+                // cada controlador tenga que acordarse de normalizar.
+                (req as any).user = { profileId: profile.id, role: normalizeRole(profile.role) };
             }
 
             next();
@@ -79,7 +83,7 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
             return sendError(res, 403, 'Access denied. Could not determine user role.');
         }
 
-        if (profileRole !== 'admin') {
+        if (!isAdminRole(profileRole)) {
             return sendError(res, 403, 'Access denied. Admin role required.');
         }
 

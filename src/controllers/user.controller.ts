@@ -20,6 +20,14 @@ import { transformUser, transformUsers, transformUserWithRelations } from '../tr
 import { verifyGoogleToken } from '../utils/google-auth';
 import { verifyAppleToken } from '../utils/apple-auth';
 import { emailService } from '../utils/email';
+import {
+    DEFAULT_ORG_ROLE,
+    DEFAULT_PROFILE_ROLE,
+    PROFILE_ROLES,
+    isAdminRole,
+    isProfileRole,
+    normalizeRole,
+} from '../constants/roles';
 
 export const UserController = {
     index: async (req: Request, res: Response) => {
@@ -130,6 +138,12 @@ export const UserController = {
             const { email, full_name, phone, role, password } = req.body;
             if (!email || !full_name) return sendError(res, 400, 'email and full_name are required');
 
+            // Esta ruta no pasa por un validador, así que el rol se normaliza y valida aquí.
+            const normalizedRole = role ? normalizeRole(role) : DEFAULT_PROFILE_ROLE;
+            if (!isProfileRole(normalizedRole)) {
+                return sendError(res, 400, `Invalid role. Expected one of: ${PROFILE_ROLES.join(', ')}`);
+            }
+
             const normalizedEmail = email.trim().toLowerCase();
 
             // Check if user already exists
@@ -155,7 +169,7 @@ export const UserController = {
                         email: normalizedEmail,
                         fullName: full_name,
                         phone: phone || '',
-                        role: role || 'salesman',
+                        role: normalizedRole,
                         shouldChangePassword: true,
                         currentOrganizationId: orgId,
                         userId: user.id,
@@ -164,7 +178,11 @@ export const UserController = {
 
                 // OrgMember FK references Profile.id, not User.id
                 await tx.organizationMember.create({
-                    data: { organizationId: orgId, userId: profile.id, role: role === 'admin' ? 'admin' : 'member' },
+                    data: {
+                        organizationId: orgId,
+                        userId: profile.id,
+                        role: isAdminRole(normalizedRole) ? 'admin' : DEFAULT_ORG_ROLE,
+                    },
                 });
 
                 return profile;

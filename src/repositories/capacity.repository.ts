@@ -1,23 +1,28 @@
 import { prisma } from '../config/prisma';
+import { isTeamRole } from '../constants/roles';
 
-const TEAM_ROLES = ['admin', 'salesman', 'freelancer'];
+// TODO(P1): mismo patrón que TEAM_ROLES, pendiente de extraer al catálogo de estados.
 const COMPLETED_STATES = ['COMPLETED', 'DONE', 'completed', 'done'];
 
 export const CapacityRepository = {
     /**
-     * Returns active org members whose Profile.role is in TEAM_ROLES
-     * (excludes clients and viewers).
+     * Returns active org members with an internal role (excludes clients and viewers).
+     *
+     * El filtro se aplica en memoria y no con `role: { in: [...] }` porque la
+     * comparación de Postgres distingue mayúsculas: un perfil guardado como
+     * `"Admin"` desaparecería del cálculo de capacidad sin ningún aviso.
+     * La lista de miembros de una organización es pequeña, así que el coste es nulo.
      */
-    getTeamMembers: (orgId: string) =>
-        prisma.organizationMember.findMany({
-            where: {
-                organizationId: orgId,
-                profile: { role: { in: TEAM_ROLES } },
-            },
+    getTeamMembers: async (orgId: string) => {
+        const members = await prisma.organizationMember.findMany({
+            where: { organizationId: orgId },
             include: {
                 profile: { select: { id: true, fullName: true, email: true, role: true } },
             },
-        }),
+        });
+
+        return members.filter((m) => isTeamRole(m.profile?.role));
+    },
 
     /**
      * Count assigned tasks (both ProjectTask and Task models) that are NOT completed.

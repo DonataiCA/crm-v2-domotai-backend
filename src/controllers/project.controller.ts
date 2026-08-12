@@ -12,6 +12,7 @@ import {
     PHASE_DATE_RANGE_MESSAGE,
     TASK_DATE_RANGE_MESSAGE,
 } from '../validators/project.validator';
+import { isClientRole } from '../constants/roles';
 
 export const ProjectController = {
     index: async (req: Request, res: Response) => {
@@ -29,7 +30,7 @@ export const ProjectController = {
             let clientEmail: string | undefined;
             if (userId) {
                 const profile = await prisma.profile.findUnique({ where: { userId }, select: { role: true, email: true } });
-                if (profile?.role === 'client') {
+                if (profile && isClientRole(profile.role)) {
                     clientEmail = profile.email;
                 }
             }

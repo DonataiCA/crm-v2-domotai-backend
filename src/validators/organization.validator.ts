@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_ORG_ROLE, ORG_ROLES, normalizeRole } from '../constants/roles';
 
 export const createOrgSchema = z.object({
     name: z.string().min(1, 'Name is required').max(200),
@@ -9,5 +10,5 @@ export const createOrgSchema = z.object({
 
 export const addMemberSchema = z.object({
     userId: z.string().uuid('Valid user ID required'),
-    role: z.enum(['admin', 'member', 'client']).optional().default('member'),
+    role: z.string().transform(normalizeRole).pipe(z.enum(ORG_ROLES)).optional().default(DEFAULT_ORG_ROLE),
 }).strip();

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { sendError } from '../utils/error';
 import { prisma } from '../config/prisma';
 import { emailService } from '../utils/email';
+import { isTeamRole } from '../constants/roles';
 
 export const DashboardController = {
     commercial: async (req: Request, res: Response) => {
@@ -214,7 +215,7 @@ export const DashboardController = {
 
             // Send to team members (salesman, admin, freelancer)
             const recipients = teamMembers
-                .filter(m => ['salesman', 'admin', 'freelancer'].includes(m.profile?.role || ''))
+                .filter(m => isTeamRole(m.profile?.role))
                 .map(m => m.profile?.email)
                 .filter(Boolean) as string[];
 
