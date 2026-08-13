@@ -38,6 +38,17 @@ function buildWhere(orgId: string, filters?: ProjectFilters) {
     return where;
 }
 
+const TASK_INCLUDE = {
+    assignee: { select: { id: true, fullName: true, email: true } },
+    creator: { select: { id: true, fullName: true, email: true } },
+    phase: { select: { id: true, name: true } },
+    taskTags: { include: { tag: true } },
+    comments: {
+        orderBy: { createdAt: 'asc' as const },
+        include: { creator: { select: { id: true, fullName: true, email: true } } },
+    },
+} as const;
+
 const projectIncludes = {
     projectLead: { select: { id: true, fullName: true, email: true } },
     creator: { select: { id: true, fullName: true, email: true } },
@@ -196,17 +207,25 @@ export const ProjectRepository = {
             },
         }),
 
-    updatePhase: (phaseId: string, data: Record<string, unknown>) =>
-        prisma.projectPhase.update({
-            where: { id: phaseId },
+    /** ProjectPhase no tiene organizationId: se filtra por el proyecto padre. */
+    updatePhase: async (phaseId: string, orgId: string, data: Record<string, unknown>) => {
+        const { count } = await prisma.projectPhase.updateMany({
+            where: { id: phaseId, project: { organizationId: orgId } },
             data,
-            include: {
-                tasks: true,
-            },
-        }),
+        });
+        if (count === 0) return null;
+        return prisma.projectPhase.findFirst({
+            where: { id: phaseId, project: { organizationId: orgId } },
+            include: { tasks: true },
+        });
+    },
 
-    deletePhase: (phaseId: string) =>
-        prisma.projectPhase.delete({ where: { id: phaseId } }),
+    deletePhase: async (phaseId: string, orgId: string) => {
+        const { count } = await prisma.projectPhase.deleteMany({
+            where: { id: phaseId, project: { organizationId: orgId } },
+        });
+        return count > 0;
+    },
 
     // Project Tasks
     createTask: (data: {
@@ -239,24 +258,30 @@ export const ProjectRepository = {
             },
         }),
 
-    updateTask: (taskId: string, data: Record<string, unknown>) =>
-        prisma.projectTask.update({
-            where: { id: taskId },
+    /**
+     * `updateMany` + relectura en vez de `update`: `update` sólo acepta claves
+     * únicas en el `where`, así que no permite añadir `organizationId` y por eso
+     * este método podía escribir en cualquier organización. `count === 0` cubre a
+     * la vez "no existe" y "no es tuya", y el llamador responde 404 en ambos.
+     */
+    updateTask: async (taskId: string, orgId: string, data: Record<string, unknown>) => {
+        const { count } = await prisma.projectTask.updateMany({
+            where: { id: taskId, organizationId: orgId },
             data,
-            include: {
-                assignee: { select: { id: true, fullName: true, email: true } },
-                creator: { select: { id: true, fullName: true, email: true } },
-                phase: { select: { id: true, name: true } },
-                taskTags: { include: { tag: true } },
-                comments: {
-                    orderBy: { createdAt: 'asc' as const },
-                    include: { creator: { select: { id: true, fullName: true, email: true } } },
-                },
-            },
-        }),
+        });
+        if (count === 0) return null;
+        return prisma.projectTask.findFirst({
+            where: { id: taskId, organizationId: orgId },
+            include: TASK_INCLUDE,
+        });
+    },
 
-    deleteTask: (taskId: string) =>
-        prisma.projectTask.delete({ where: { id: taskId } }),
+    deleteTask: async (taskId: string, orgId: string) => {
+        const { count } = await prisma.projectTask.deleteMany({
+            where: { id: taskId, organizationId: orgId },
+        });
+        return count > 0;
+    },
 
     // Team members
     getMembers: (projectId: string) =>

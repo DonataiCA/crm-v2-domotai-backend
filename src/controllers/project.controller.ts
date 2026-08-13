@@ -178,7 +178,10 @@ export const ProjectController = {
 
     updatePhase: async (req: Request, res: Response) => {
         try {
-            const existing = await prisma.projectPhase.findUnique({ where: { id: req.params.phaseId } });
+            const orgId = (req as any).orgId;
+            const existing = await prisma.projectPhase.findFirst({
+                where: { id: req.params.phaseId, project: { organizationId: orgId } },
+            });
             if (!existing) return sendError(res, 404, 'Phase not found');
 
             const data: Record<string, unknown> = { ...req.body };
@@ -195,7 +198,8 @@ export const ProjectController = {
                 }
             }
 
-            const phase = await ProjectRepository.updatePhase(req.params.phaseId, data);
+            const phase = await ProjectRepository.updatePhase(req.params.phaseId, orgId, data);
+            if (!phase) return sendError(res, 404, 'Phase not found');
             res.json(phase);
         } catch (error) {
             return sendError(res, 500, 'Failed to update phase', error);
@@ -204,10 +208,14 @@ export const ProjectController = {
 
     deletePhase: async (req: Request, res: Response) => {
         try {
-            const existing = await prisma.projectPhase.findUnique({ where: { id: req.params.phaseId } });
+            const orgId = (req as any).orgId;
+            const existing = await prisma.projectPhase.findFirst({
+                where: { id: req.params.phaseId, project: { organizationId: orgId } },
+            });
             if (!existing) return sendError(res, 404, 'Phase not found');
 
-            await ProjectRepository.deletePhase(req.params.phaseId);
+            const deleted = await ProjectRepository.deletePhase(req.params.phaseId, orgId);
+            if (!deleted) return sendError(res, 404, 'Phase not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete phase', error);
@@ -273,7 +281,9 @@ export const ProjectController = {
     updateTask: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const existing = await prisma.projectTask.findUnique({ where: { id: req.params.taskId } });
+            const existing = await prisma.projectTask.findFirst({
+                where: { id: req.params.taskId, organizationId: orgId },
+            });
             if (!existing) return sendError(res, 404, 'Task not found');
 
             const data: Record<string, unknown> = { ...req.body };
@@ -291,7 +301,8 @@ export const ProjectController = {
                 }
             }
 
-            const task = await ProjectRepository.updateTask(req.params.taskId, data);
+            const task = await ProjectRepository.updateTask(req.params.taskId, orgId, data);
+            if (!task) return sendError(res, 404, 'Task not found');
             res.json(task);
             await logAudit(req, { action: 'UPDATE', entityType: 'ProjectTask', entityId: task.id, entityName: task.title });
 
@@ -320,8 +331,10 @@ export const ProjectController = {
 
     deleteTask: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const taskId = req.params.taskId;
-            await ProjectRepository.deleteTask(taskId);
+            const deleted = await ProjectRepository.deleteTask(taskId, orgId);
+            if (!deleted) return sendError(res, 404, 'Task not found');
             res.sendStatus(204);
             await logAudit(req, { action: 'DELETE', entityType: 'ProjectTask', entityId: taskId });
         } catch (error) {
@@ -577,7 +590,7 @@ export const ProjectController = {
 
                 if (Object.keys(updates).length === 0) continue;
 
-                const task = await ProjectRepository.updateTask(a.taskId, updates);
+                const task = await ProjectRepository.updateTask(a.taskId, organizationId, updates);
 
                 const summaryParts: string[] = [];
                 if (changes.assignee) summaryParts.push(`assigned to ${changes.assignee}`);
@@ -916,6 +929,9 @@ export const ProjectController = {
 
             if (!trimmed && images.length === 0) return sendError(res, 400, 'Comment content or at least one image is required');
 
+            const task = await prisma.projectTask.findFirst({ where: { id: taskId, organizationId: orgId } });
+            if (!task) return sendError(res, 404, 'Task not found');
+
             const comment = await prisma.taskComment.create({
                 data: {
                     projectTaskId: taskId,
@@ -937,8 +953,12 @@ export const ProjectController = {
 
     deleteTaskComment: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { commentId } = req.params;
-            await prisma.taskComment.delete({ where: { id: commentId } });
+            const { count } = await prisma.taskComment.deleteMany({
+                where: { id: commentId, organizationId: orgId },
+            });
+            if (count === 0) return sendError(res, 404, 'Comment not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete comment', error);
