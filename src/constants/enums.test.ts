@@ -203,6 +203,11 @@ describe('normalizeProjectStatus', () => {
         expect(normalizeProjectStatus(undefined)).toBeNull();
     });
 
+    it('trata el guion interno igual que el espacio', () => {
+        expect(normalizeProjectStatus('not-started')).toBe('NOT_STARTED');
+        expect(normalizeProjectStatus('on-hold')).toBe('ON_HOLD');
+    });
+
     it('es idempotente sobre valores ya canónicos', () => {
         for (const status of PROJECT_STATUSES) {
             expect(normalizeProjectStatus(status)).toBe(status);
@@ -232,6 +237,11 @@ describe('normalizePhaseStatus', () => {
         expect(normalizePhaseStatus('   ')).toBeNull();
         expect(normalizePhaseStatus(null)).toBeNull();
         expect(normalizePhaseStatus(undefined)).toBeNull();
+    });
+
+    it('trata el guion interno igual que el espacio', () => {
+        expect(normalizePhaseStatus('on-hold')).toBe('on_hold');
+        expect(normalizePhaseStatus('ON-HOLD')).toBe('on_hold');
     });
 
     it('es idempotente sobre valores ya canónicos', () => {
