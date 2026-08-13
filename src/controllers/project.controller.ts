@@ -209,11 +209,11 @@ export const ProjectController = {
     deletePhase: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const existing = await prisma.projectPhase.findFirst({
-                where: { id: req.params.phaseId, project: { organizationId: orgId } },
-            });
-            if (!existing) return sendError(res, 404, 'Phase not found');
-
+            // No existence pre-check here: deletePhase's deleteMany already filters
+            // by { id, project: { organizationId } } and its count === 0 covers
+            // "doesn't exist" and "not yours" — a separate findFirst would just
+            // duplicate that same query for no benefit (unlike updatePhase, which
+            // needs `existing` to validate the date range against pre-existing values).
             const deleted = await ProjectRepository.deletePhase(req.params.phaseId, orgId);
             if (!deleted) return sendError(res, 404, 'Phase not found');
             res.sendStatus(204);
@@ -345,7 +345,8 @@ export const ProjectController = {
     // Team Members
     getMembers: async (req: Request, res: Response) => {
         try {
-            const members = await ProjectRepository.getMembers(req.params.projectId);
+            const orgId = (req as any).orgId;
+            const members = await ProjectRepository.getMembers(req.params.projectId, orgId);
             // Rename 'profile' to 'user' to match frontend expectations
             const transformed = (members as any[]).map(({ profile, ...rest }: any) => ({
                 ...rest,
@@ -359,10 +360,17 @@ export const ProjectController = {
 
     addMember: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const { userId } = req.body;
 
             if (!userId) return sendError(res, 400, 'userId is required');
+
+            // `create` can't validate FK ownership atomically in its own `where`
+            // (see ProjectRepository.addMember) — verify the project is ours first,
+            // same as createTask/createPhase/addRepo do for every project-scoped create.
+            const project = await ProjectRepository.findById(projectId, orgId);
+            if (!project) return sendError(res, 404, 'Project not found');
 
             const member = await ProjectRepository.addMember(projectId, userId);
             const { profile, ...rest } = member as any;
@@ -477,7 +485,7 @@ export const ProjectController = {
             }
 
             // Members: project team + org fallback
-            const teamMembers = await ProjectRepository.getMembers(projectId);
+            const teamMembers = await ProjectRepository.getMembers(projectId, organizationId);
             const members = (teamMembers as any[]).map((m: any) => ({
                 id: m.userId,
                 name: m.profile?.fullName || m.profile?.email || 'Unknown',
@@ -635,8 +643,10 @@ export const ProjectController = {
 
     removeMember: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId, userId } = req.params;
-            await ProjectRepository.removeMember(projectId, userId);
+            const removed = await ProjectRepository.removeMember(projectId, userId, orgId);
+            if (!removed) return sendError(res, 404, 'Member not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to remove team member', error);
@@ -880,9 +890,10 @@ export const ProjectController = {
 
     githubMetrics: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const metrics = await prisma.gitMetric.findMany({
-                where: { projectId },
+                where: { projectId, organizationId: orgId },
                 include: { projectRepo: { select: { id: true, label: true, githubOwner: true, repositoryName: true } } },
                 orderBy: { updatedAt: 'desc' },
             });
@@ -894,11 +905,12 @@ export const ProjectController = {
 
     githubCommits: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const branch = req.query.branch as string | undefined;
             const repoId = req.query.repoId as string | undefined;
 
-            const where: Record<string, unknown> = { projectId };
+            const where: Record<string, unknown> = { projectId, organizationId: orgId };
             if (branch) where.branchName = branch;
             if (repoId) where.projectRepoId = repoId;
 

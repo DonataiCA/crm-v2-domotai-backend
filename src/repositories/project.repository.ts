@@ -157,17 +157,6 @@ export const ProjectRepository = {
 
     // Tracking: phases with tasks + unassigned tasks
     getTracking: async (projectId: string) => {
-        const taskIncludes = {
-            assignee: { select: { id: true, fullName: true, email: true } },
-            creator: { select: { id: true, fullName: true, email: true } },
-            phase: { select: { id: true, name: true } },
-            taskTags: { include: { tag: true } },
-            comments: {
-                orderBy: { createdAt: 'asc' as const },
-                include: { creator: { select: { id: true, fullName: true, email: true } } },
-            },
-        };
-
         const [phases, unassignedTasks] = await Promise.all([
             prisma.projectPhase.findMany({
                 where: { projectId },
@@ -175,14 +164,14 @@ export const ProjectRepository = {
                 include: {
                     tasks: {
                         orderBy: { orderIndex: 'asc' },
-                        include: taskIncludes,
+                        include: TASK_INCLUDE,
                     },
                 },
             }),
             prisma.projectTask.findMany({
                 where: { projectId, phaseId: null },
                 orderBy: { orderIndex: 'asc' },
-                include: taskIncludes,
+                include: TASK_INCLUDE,
             }),
         ]);
 
@@ -207,7 +196,13 @@ export const ProjectRepository = {
             },
         }),
 
-    /** ProjectPhase no tiene organizationId: se filtra por el proyecto padre. */
+    /**
+     * ProjectPhase no tiene organizationId: se filtra por el proyecto padre.
+     * La relectura, igual que en `updateTask`, filtra sólo por `id` — el
+     * `updateMany` ya probó la pertenencia de forma atómica; repetir el
+     * filtro de organización aquí podría devolver `null` sobre una escritura
+     * que sí ocurrió.
+     */
     updatePhase: async (phaseId: string, orgId: string, data: Record<string, unknown>) => {
         const { count } = await prisma.projectPhase.updateMany({
             where: { id: phaseId, project: { organizationId: orgId } },
@@ -215,7 +210,7 @@ export const ProjectRepository = {
         });
         if (count === 0) return null;
         return prisma.projectPhase.findFirst({
-            where: { id: phaseId, project: { organizationId: orgId } },
+            where: { id: phaseId },
             include: { tasks: true },
         });
     },
@@ -246,16 +241,7 @@ export const ProjectRepository = {
     }) =>
         prisma.projectTask.create({
             data,
-            include: {
-                assignee: { select: { id: true, fullName: true, email: true } },
-                creator: { select: { id: true, fullName: true, email: true } },
-                phase: { select: { id: true, name: true } },
-                taskTags: { include: { tag: true } },
-                comments: {
-                    orderBy: { createdAt: 'asc' as const },
-                    include: { creator: { select: { id: true, fullName: true, email: true } } },
-                },
-            },
+            include: TASK_INCLUDE,
         }),
 
     /**
@@ -263,6 +249,15 @@ export const ProjectRepository = {
      * únicas en el `where`, así que no permite añadir `organizationId` y por eso
      * este método podía escribir en cualquier organización. `count === 0` cubre a
      * la vez "no existe" y "no es tuya", y el llamador responde 404 en ambos.
+     *
+     * La relectura filtra sólo por `id`, sin repetir `organizationId`: el
+     * `updateMany` de arriba ya probó de forma atómica que la fila era de
+     * `orgId` en el instante de la escritura — si `count` es 1, la escritura
+     * ocurrió sobre una fila tuya. Si el propio `data` cambió `organizationId`
+     * (mass assignment, cerrado en la Tarea 4) la fila ya se mudó de
+     * organización para cuando llega la relectura; repetir el filtro aquí
+     * haría que esa relectura fallara con `null` — y el controlador respondería
+     * 404 sobre una escritura que sí ocurrió. No "arreglar" esto de vuelta.
      */
     updateTask: async (taskId: string, orgId: string, data: Record<string, unknown>) => {
         const { count } = await prisma.projectTask.updateMany({
@@ -271,7 +266,7 @@ export const ProjectRepository = {
         });
         if (count === 0) return null;
         return prisma.projectTask.findFirst({
-            where: { id: taskId, organizationId: orgId },
+            where: { id: taskId },
             include: TASK_INCLUDE,
         });
     },
@@ -284,14 +279,22 @@ export const ProjectRepository = {
     },
 
     // Team members
-    getMembers: (projectId: string) =>
+    /** `ProjectTeamMember` no tiene organizationId: se filtra por el proyecto padre. */
+    getMembers: (projectId: string, orgId: string) =>
         prisma.projectTeamMember.findMany({
-            where: { projectId },
+            where: { projectId, project: { organizationId: orgId } },
             include: {
                 profile: { select: { id: true, fullName: true, email: true, role: true } },
             },
         }),
 
+    /**
+     * `create` no admite un `where` compuesto para validar la pertenencia del
+     * proyecto de forma atómica (a diferencia de `updateMany`/`deleteMany`), así
+     * que el controlador verifica `projectId` contra `orgId` antes de llamar a
+     * este método — el mismo patrón que ya usan `createTask`/`createPhase`/`addRepo`
+     * en este archivo para todo `create` colgado de un proyecto.
+     */
     addMember: (projectId: string, userId: string) =>
         prisma.projectTeamMember.create({
             data: { projectId, userId },
@@ -300,8 +303,10 @@ export const ProjectRepository = {
             },
         }),
 
-    removeMember: (projectId: string, userId: string) =>
-        prisma.projectTeamMember.deleteMany({
-            where: { projectId, userId },
-        }),
+    removeMember: async (projectId: string, userId: string, orgId: string) => {
+        const { count } = await prisma.projectTeamMember.deleteMany({
+            where: { projectId, userId, project: { organizationId: orgId } },
+        });
+        return count > 0;
+    },
 };
