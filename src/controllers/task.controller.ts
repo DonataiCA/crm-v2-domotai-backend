@@ -237,12 +237,11 @@ export const TaskController = {
 
     deleteComment: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { commentId } = req.params;
 
-            const existing = await TaskRepository.findCommentById(commentId);
-            if (!existing) return sendError(res, 404, 'Comment not found');
-
-            await TaskRepository.deleteComment(commentId);
+            const deleted = await TaskRepository.deleteComment(commentId, orgId);
+            if (!deleted) return sendError(res, 404, 'Comment not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete comment', error);
@@ -279,12 +278,11 @@ export const TaskController = {
 
     deleteLink: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { linkId } = req.params;
 
-            const existing = await TaskRepository.findLinkById(linkId);
-            if (!existing) return sendError(res, 404, 'Link not found');
-
-            await TaskRepository.deleteLink(linkId);
+            const deleted = await TaskRepository.deleteLink(linkId, orgId);
+            if (!deleted) return sendError(res, 404, 'Link not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete link', error);

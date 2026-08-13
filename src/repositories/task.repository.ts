@@ -165,11 +165,15 @@ export const TaskRepository = {
             include: { creator: { select: { id: true, fullName: true, email: true } } },
         }),
 
-    deleteComment: (id: string) =>
-        prisma.taskComment.delete({ where: { id } }),
-
-    findCommentById: (id: string) =>
-        prisma.taskComment.findUnique({ where: { id } }),
+    /**
+     * `deleteMany` filtrado por `organizationId` en vez de `delete({ where: { id } })`:
+     * antes cualquier `commentId` adivinado se borraba sin comprobar la organización.
+     * `count === 0` cubre "no existe" y "no es tuyo" a la vez.
+     */
+    deleteComment: async (id: string, orgId: string) => {
+        const { count } = await prisma.taskComment.deleteMany({ where: { id, organizationId: orgId } });
+        return count > 0;
+    },
 
     // Links
     addLink: (data: {
@@ -185,9 +189,9 @@ export const TaskRepository = {
             include: { creator: { select: { id: true, fullName: true, email: true } } },
         }),
 
-    deleteLink: (id: string) =>
-        prisma.taskLink.delete({ where: { id } }),
-
-    findLinkById: (id: string) =>
-        prisma.taskLink.findUnique({ where: { id } }),
+    /** Mismo patrón que `deleteComment`: filtra por organización, no sólo por id. */
+    deleteLink: async (id: string, orgId: string) => {
+        const { count } = await prisma.taskLink.deleteMany({ where: { id, organizationId: orgId } });
+        return count > 0;
+    },
 };
