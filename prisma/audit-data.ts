@@ -61,7 +61,7 @@ const CHECKS: Check[] = [
     { name: 'profiles.email duplicados (case-insensitive)',
       sql: `SELECT coalesce(sum(c - 1), 0)::int FROM (SELECT count(*) AS c FROM profiles GROUP BY lower(trim(email)) HAVING count(*) > 1) x` },
     { name: 'tags con mismo nombre en organizaciones distintas (bloqueadas por el unique global)',
-      sql: `SELECT count(*)::int FROM (SELECT "nameLower" FROM tags GROUP BY "nameLower" HAVING count(DISTINCT "organizationId") > 1) x` },
+      sql: `SELECT coalesce(sum(c - 1), 0)::int FROM (SELECT count(*) AS c FROM tags GROUP BY "nameLower" HAVING count(DISTINCT "organizationId") > 1) x` },
     { name: 'organizations.slug duplicados',
       sql: `SELECT coalesce(sum(c - 1), 0)::int FROM (SELECT count(*) AS c FROM organizations WHERE slug IS NOT NULL GROUP BY slug HAVING count(*) > 1) x` },
     { name: 'invoices.invoiceNumber duplicados dentro de la organización',
@@ -75,7 +75,7 @@ const CHECKS: Check[] = [
     { name: 'project_tasks COMPLETED sin completedAt',
       sql: `SELECT count(*)::int FROM project_tasks WHERE status = 'COMPLETED' AND "completedAt" IS NULL` },
     { name: 'project_tasks con completedAt pero no COMPLETED',
-      sql: `SELECT count(*)::int FROM project_tasks WHERE status <> 'COMPLETED' AND "completedAt" IS NOT NULL` },
+      sql: `SELECT count(*)::int FROM project_tasks WHERE status IS DISTINCT FROM 'COMPLETED' AND "completedAt" IS NOT NULL` },
     { name: 'time_entries con endTime anterior a startTime',
       sql: `SELECT count(*)::int FROM time_entries WHERE "startTime" IS NOT NULL AND "endTime" IS NOT NULL AND "endTime" < "startTime"` },
 ];
