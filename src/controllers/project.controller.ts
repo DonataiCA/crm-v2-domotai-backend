@@ -372,6 +372,18 @@ export const ProjectController = {
             const project = await ProjectRepository.findById(projectId, orgId);
             if (!project) return sendError(res, 404, 'Project not found');
 
+            // The projectId check alone isn't enough: without this, `userId` could be
+            // a Profile from a different organization, which would then surface its
+            // fullName/email/role through getMembers (exactly what C3 just closed,
+            // through the other door) and become assignable by the AI agent (Tarea 8
+            // builds its assignee list from projectTeamMember). `OrganizationMember.userId`
+            // is a FK to Profile.id, not User.id — same gotcha as everywhere else in
+            // this codebase. Same 404 as the project check, on purpose: a distinct
+            // message would let a caller tell "project not mine" apart from "user not
+            // in my org", leaking whether that profile exists.
+            const membership = await prisma.organizationMember.findFirst({ where: { organizationId: orgId, userId } });
+            if (!membership) return sendError(res, 404, 'Project not found');
+
             const member = await ProjectRepository.addMember(projectId, userId);
             const { profile, ...rest } = member as any;
             res.status(201).json({ ...rest, user: profile || null });
