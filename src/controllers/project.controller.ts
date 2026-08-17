@@ -13,6 +13,11 @@ import {
     TASK_DATE_RANGE_MESSAGE,
 } from '../validators/project.validator';
 import { isClientRole } from '../constants/roles';
+import {
+    ARCHIVED_PROJECT_STATUS,
+    DEFAULT_PROJECT_STATUS,
+    DEFAULT_TASK_STATUS,
+} from '../constants/enums';
 
 export const ProjectController = {
     index: async (req: Request, res: Response) => {
@@ -435,7 +440,7 @@ export const ProjectController = {
                     organizationId,
                     title: aiTask.title,
                     description: aiTask.description,
-                    status: 'TODO',
+                    status: DEFAULT_TASK_STATUS,
                     priority: aiTask.priority,
                     orderIndex: aiTask.orderIndex,
                 });
@@ -478,7 +483,7 @@ export const ProjectController = {
                     existingTasks.push({
                         id: t.id,
                         title: t.title,
-                        status: t.status || 'TODO',
+                        status: t.status || DEFAULT_TASK_STATUS,
                         priority: t.priority || null,
                         phaseName: phase.name,
                         assigneeName: t.assignee?.fullName || null,
@@ -489,7 +494,7 @@ export const ProjectController = {
                 existingTasks.push({
                     id: t.id,
                     title: t.title,
-                    status: t.status || 'TODO',
+                    status: t.status || DEFAULT_TASK_STATUS,
                     priority: t.priority || null,
                     phaseName: null,
                     assigneeName: t.assignee?.fullName || null,
@@ -546,7 +551,7 @@ export const ProjectController = {
                         organizationId,
                         title: a.title,
                         description: a.description,
-                        status: 'TODO',
+                        status: DEFAULT_TASK_STATUS,
                         priority: a.priority || 'MEDIUM',
                         orderIndex: 0,
                         assignedTo: assignedTo || undefined,
@@ -671,7 +676,7 @@ export const ProjectController = {
             const orgId = (req as any).orgId;
 
             const data = await prisma.project.findMany({
-                where: { organizationId: orgId, status: 'Archived' },
+                where: { organizationId: orgId, status: ARCHIVED_PROJECT_STATUS },
                 orderBy: { updatedAt: 'desc' },
                 include: {
                     projectLead: { select: { id: true, fullName: true, email: true } },
@@ -690,7 +695,7 @@ export const ProjectController = {
             const existing = await ProjectRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Project not found');
 
-            await ProjectRepository.update(req.params.id, { status: 'Archived' }, orgId);
+            await ProjectRepository.update(req.params.id, { status: ARCHIVED_PROJECT_STATUS }, orgId);
             res.sendStatus(204);
             await logAudit(req, { action: 'ARCHIVE', entityType: 'Project', entityId: existing.id, entityName: existing.name });
         } catch (error) {
@@ -704,7 +709,7 @@ export const ProjectController = {
             const existing = await ProjectRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Project not found');
 
-            await ProjectRepository.update(req.params.id, { status: 'Not Started' }, orgId);
+            await ProjectRepository.update(req.params.id, { status: DEFAULT_PROJECT_STATUS }, orgId);
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to restore project', error);

@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { isTeamRole } from '../constants/roles';
+import { ARCHIVED_PROJECT_STATUS } from '../constants/enums';
 
 // TODO(P1): mismo patrón que TEAM_ROLES, pendiente de extraer al catálogo de estados.
 const COMPLETED_STATES = ['COMPLETED', 'DONE', 'completed', 'done'];
@@ -91,7 +92,7 @@ export const CapacityRepository = {
         const projects = await prisma.project.findMany({
             where: {
                 organizationId: orgId,
-                status: { not: 'ARCHIVED' },
+                status: { not: ARCHIVED_PROJECT_STATUS },
                 OR: [
                     { projectLeadId: profileId },
                     { teamMembers: { some: { userId: profileId } } },
@@ -109,7 +110,7 @@ export const CapacityRepository = {
         prisma.project.count({
             where: {
                 organizationId: orgId,
-                status: { not: 'ARCHIVED' },
+                status: { not: ARCHIVED_PROJECT_STATUS },
                 projectLeadId: profileId,
             },
         }),

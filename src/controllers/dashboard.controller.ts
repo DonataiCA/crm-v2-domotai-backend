@@ -3,6 +3,7 @@ import { sendError } from '../utils/error';
 import { prisma } from '../config/prisma';
 import { emailService } from '../utils/email';
 import { isTeamRole } from '../constants/roles';
+import { DEFAULT_PROJECT_STATUS } from '../constants/enums';
 
 export const DashboardController = {
     commercial: async (req: Request, res: Response) => {
@@ -131,12 +132,14 @@ export const DashboardController = {
 
             const projectsByStatus: Record<string, number> = {};
             projects.forEach(p => {
-                const status = p.status || 'Not Started';
+                const status = p.status || DEFAULT_PROJECT_STATUS;
                 projectsByStatus[status] = (projectsByStatus[status] || 0) + 1;
             });
 
+            // El `|| 'active'` que había aquí existía porque la base tenía dos
+            // grafías del mismo estado. Con un solo vocabulario sobra.
             const activeProjectIds = projects
-                .filter(p => p.status === 'In Progress' || p.status === 'active')
+                .filter(p => p.status === 'IN_PROGRESS')
                 .map(p => p.id);
 
             const taskStats = activeProjectIds.length > 0
