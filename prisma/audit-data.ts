@@ -29,10 +29,16 @@ const CHECKS: Check[] = [
       sql: `SELECT count(*)::int FROM profiles WHERE role NOT IN ('admin','salesman','freelancer','client','viewer')` },
     { name: 'organization_members.role fuera de catálogo',
       sql: `SELECT count(*)::int FROM organization_members WHERE role NOT IN ('admin','member','client')` },
+    // Minúscula y con create_task/edit_task: el vocabulario real del portal.
+    // Esta regla medía contra VIEW|COMMENT|EDIT, que no era el de la base ni el
+    // del código, y por eso marcaba las 6 filas en rojo sin que hubiera nada malo.
     { name: 'project_shares.permissions fuera de catálogo',
-      sql: `SELECT count(*)::int FROM project_shares WHERE permissions !~ '^(VIEW|COMMENT|EDIT)(,(VIEW|COMMENT|EDIT))*$'` },
+      sql: `SELECT count(*)::int FROM project_shares
+            WHERE permissions !~ '^(view|comment|create_task|edit_task)(,(view|comment|create_task|edit_task))*$'` },
 
     // --- Coherencia referencial que la base hoy no exige ---
+    { name: 'leads.stage que no es un slug',
+      sql: `SELECT count(*)::int FROM leads WHERE stage IS NOT NULL AND stage !~ '^[a-z0-9_]+$'` },
     { name: 'leads.stage sin PipelineStage correspondiente',
       sql: `SELECT count(*)::int FROM leads l WHERE l."pipelineId" IS NOT NULL AND l.stage IS NOT NULL
             AND NOT EXISTS (SELECT 1 FROM pipeline_stages s WHERE s."pipelineId" = l."pipelineId" AND s.slug = l.stage)` },
