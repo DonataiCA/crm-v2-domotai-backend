@@ -21,6 +21,7 @@ import {
     normalizePhaseStatus,
     normalizeInvoiceStatus,
     isCompletedStatus,
+    slugifyStage,
 } from './enums';
 
 describe('catálogo de enums', () => {
@@ -354,5 +355,42 @@ describe('DEFAULT_SHARE_PERMISSIONS', () => {
     it('coincide con el default que portal.controller ya aplicaba', () => {
         expect(DEFAULT_SHARE_PERMISSIONS).toBe('view,comment');
         expect(normalizeSharePermissions(DEFAULT_SHARE_PERMISSIONS)).toBe('view,comment');
+    });
+});
+
+describe('slugifyStage', () => {
+    it('quita acentos, que es exactamente lo que separa el name del slug', () => {
+        expect(slugifyStage('Negociación')).toBe('negociacion');
+        expect(slugifyStage('Propuesta')).toBe('propuesta');
+    });
+
+    it('reproduce los seis slugs reales del pipeline comercial', () => {
+        const pares: Array<[string, string]> = [
+            ['Nuevo', 'nuevo'],
+            ['Contactado', 'contactado'],
+            ['Negociación', 'negociacion'],
+            ['Propuesta', 'propuesta'],
+            ['Ganado', 'ganado'],
+            ['Perdido', 'perdido'],
+        ];
+        for (const [name, slug] of pares) {
+            expect(slugifyStage(name), name).toBe(slug);
+        }
+    });
+
+    it('unifica espacios y guiones en guion bajo', () => {
+        expect(slugifyStage('Primera reunión')).toBe('primera_reunion');
+        expect(slugifyStage('closed-won')).toBe('closed_won');
+    });
+
+    it('es idempotente: aplicarlo a un slug lo deja igual', () => {
+        expect(slugifyStage('negociacion')).toBe('negociacion');
+        expect(slugifyStage(slugifyStage('Negociación'))).toBe('negociacion');
+    });
+
+    it('devuelve cadena vacía para valores ausentes', () => {
+        expect(slugifyStage(null)).toBe('');
+        expect(slugifyStage(undefined)).toBe('');
+        expect(slugifyStage('   ')).toBe('');
     });
 });

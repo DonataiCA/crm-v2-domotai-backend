@@ -43,6 +43,31 @@ const leadIncludes = {
 };
 
 export const LeadRepository = {
+    /**
+     * La etapa se busca **dentro del pipeline del lead**, nunca globalmente:
+     * dos organizaciones pueden tener ambas un slug 'nuevo' y son etapas
+     * distintas. Devuelve null si no pertenece a ese pipeline.
+     */
+    findStageBySlug: (pipelineId: string, slug: string) =>
+        prisma.pipelineStage.findFirst({
+            where: { pipelineId, slug },
+            select: { id: true, slug: true, name: true, category: true },
+        }),
+
+    findDefaultPipeline: (organizationId: string) =>
+        prisma.pipeline.findFirst({
+            where: { organizationId, isDefault: true },
+            select: { id: true, stages: { select: { slug: true, order: true }, orderBy: { order: 'asc' } } },
+        }),
+
+    /** La etapa inicial de un pipeline: la de menor `order`. */
+    findFirstStage: (pipelineId: string) =>
+        prisma.pipelineStage.findFirst({
+            where: { pipelineId },
+            orderBy: { order: 'asc' },
+            select: { slug: true },
+        }),
+
     findAll: (orgId: string, skip: number, take: number, filters?: LeadFilters) => {
         const where = buildWhere(orgId, filters);
         return prisma.lead.findMany({

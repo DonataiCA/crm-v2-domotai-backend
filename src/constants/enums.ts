@@ -144,3 +144,23 @@ export function normalizeSharePermissions(
     // produzcan la misma cadena en base y el CHECK de T10 sea predecible.
     return SHARE_PERMISSIONS.filter((p) => parts.includes(p)).join(',');
 }
+
+/**
+ * `'Negociación'` → `'negociacion'`. Es el puente entre `PipelineStage.name`
+ * (lo que se muestra) y `PipelineStage.slug` (lo que se guarda en `Lead.stage`).
+ * La descomposición NFD + borrado de diacríticos es lo único que separa uno de
+ * otro en los pipelines reales, y es idempotente: aplicarlo a un slug lo deja
+ * igual, de modo que el backfill se puede correr dos veces sin daño.
+ */
+export function slugifyStage(value: string | null | undefined): string {
+    if (!value) return '';
+    return String(value)
+        .normalize('NFD')
+        // ̀-ͯ es el bloque de diacríticos combinantes que NFD separa
+        // de la letra base. Con escapes y no con los caracteres literales:
+        // son invisibles en un editor y se pierden al copiar.
+        .replace(/[̀-ͯ]/g, '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+}

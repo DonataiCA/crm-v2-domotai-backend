@@ -321,7 +321,10 @@ model Lead {
   id                 String    @id @default(uuid())
   name               String?
   details            String?
-  stage              String?   @default("new")
+  // Sin default: las etapas son por pipeline y configurables, así que no hay
+  // ningún valor válido para todos. La etapa inicial la pone el controlador
+  // con `findFirstStage` del pipeline correspondiente.
+  stage              String?
   pipelineId         String?
   price              Decimal?  @default(0) @db.Decimal(12, 2)
   pricingType        String?   @default("flat")

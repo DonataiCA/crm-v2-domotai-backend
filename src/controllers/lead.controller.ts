@@ -5,6 +5,34 @@ import { logAudit } from '../utils/audit';
 import { notify } from '../utils/notify';
 import { prisma } from '../config/prisma';
 
+/**
+ * Resuelve el pipeline efectivo del lead y comprueba que la etapa pedida
+ * exista dentro de él. Devuelve el mensaje de error o null si todo está bien.
+ *
+ * Antes no se comprobaba nada: `stage` viajaba de `req.body` a la base tal
+ * cual, así que un lead podía quedar en una etapa que su pipeline no tiene y
+ * desaparecer del tablero sin que nadie supiera por qué.
+ */
+async function validateStage(
+    stage: string | undefined,
+    pipelineId: string | null | undefined,
+    orgId: string,
+): Promise<string | null> {
+    if (!stage) return null;
+
+    let effectivePipelineId = pipelineId ?? null;
+    if (!effectivePipelineId) {
+        const defaultPipeline = await LeadRepository.findDefaultPipeline(orgId);
+        if (!defaultPipeline) return 'No pipeline available for this organization';
+        effectivePipelineId = defaultPipeline.id;
+    }
+
+    const found = await LeadRepository.findStageBySlug(effectivePipelineId, stage);
+    if (!found) return `Stage '${stage}' does not exist in the selected pipeline`;
+
+    return null;
+}
+
 export const LeadController = {
     index: async (req: Request, res: Response) => {
         try {
@@ -56,8 +84,26 @@ export const LeadController = {
             const orgId = (req as any).orgId;
 
             const userId = (req as any).userId;
+
+            const stageError = await validateStage(req.body.stage, req.body.pipelineId, orgId);
+            if (stageError) return sendError(res, 400, stageError);
+
+            // Sin `stage` explícito, se resuelve la etapa inicial del pipeline.
+            // El esquema ya no trae `@default("new")`: las etapas son por
+            // pipeline y configurables, así que no hay valor válido para todos.
+            let stage: string | undefined = req.body.stage;
+            if (!stage) {
+                const pipelineId = req.body.pipelineId
+                    ?? (await LeadRepository.findDefaultPipeline(orgId))?.id
+                    ?? null;
+                if (pipelineId) {
+                    stage = (await LeadRepository.findFirstStage(pipelineId))?.slug;
+                }
+            }
+
             const lead = await LeadRepository.create({
                 ...req.body,
+                stage,
                 organizationId: orgId,
                 createdBy: userId,
             });
@@ -87,6 +133,13 @@ export const LeadController = {
             const orgId = (req as any).orgId;
             const existing = await LeadRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Lead not found');
+
+            const stageError = await validateStage(
+                req.body.stage,
+                req.body.pipelineId ?? existing.pipelineId,
+                orgId,
+            );
+            if (stageError) return sendError(res, 400, stageError);
 
             const lead = await LeadRepository.update(req.params.id, req.body, orgId);
             if (!lead) return sendError(res, 404, 'Lead not found');
