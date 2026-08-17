@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { emailService } from '../utils/email';
 import { logAudit } from '../utils/audit';
+import { DEFAULT_SHARE_PERMISSIONS } from '../constants/enums';
 
 function hasPermission(permissionsStr: string, required: string): boolean {
     const perms = permissionsStr.split(',').map(p => p.trim().toLowerCase());
@@ -152,7 +153,7 @@ export const PortalController = {
                     shareToken,
                     clientEmail: normalizedEmail,
                     clientName: clientName || null,
-                    permissions: permissions || 'view,comment',
+                    permissions: permissions || DEFAULT_SHARE_PERMISSIONS,
                     expiresAt: expiresAt ? new Date(expiresAt) : null,
                     createdBy: userId || null,
                 },
@@ -162,7 +163,7 @@ export const PortalController = {
             const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
             const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
             const loginUrl = `${req.protocol}://${req.get('host')?.replace(':3000', ':8080')}/auth`;
-            const perms = (permissions || 'view,comment').split(',');
+            const perms = (permissions || DEFAULT_SHARE_PERMISSIONS).split(',');
             emailService.sendClientInvitation(
                 normalizedEmail,
                 clientName || 'Client',

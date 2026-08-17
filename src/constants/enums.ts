@@ -28,8 +28,18 @@ export type PhaseStatus = (typeof PHASE_STATUSES)[number];
 export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
-export const SHARE_PERMISSIONS = ['VIEW', 'COMMENT', 'EDIT'] as const;
+/**
+ * Minúscula a propósito, y con `create_task`/`edit_task`: es el vocabulario que
+ * `portal.controller.ts` comprueba de verdad (líneas 382, 463 y 515) y el que
+ * tienen las filas de `project_shares`. La versión anterior de esta constante
+ * decía VIEW/COMMENT/EDIT, que no coincidía ni con el código ni con la base:
+ * era el catálogo el que estaba mal, no los datos.
+ */
+export const SHARE_PERMISSIONS = ['view', 'comment', 'create_task', 'edit_task'] as const;
 export type SharePermission = (typeof SHARE_PERMISSIONS)[number];
+
+/** El default que `portal.controller` ya aplicaba al compartir sin especificar. */
+export const DEFAULT_SHARE_PERMISSIONS = 'view,comment';
 
 export const DEFAULT_TASK_STATUS: TaskStatus = 'TODO';
 export const DEFAULT_TASK_PRIORITY: TaskPriority = 'MEDIUM';
@@ -98,4 +108,39 @@ export function normalizeInvoiceStatus(value: string | null | undefined): Invoic
  */
 export function isCompletedStatus(value: string | null | undefined): boolean {
     return normalizeTaskStatus(value) === 'COMPLETED';
+}
+
+/**
+ * Estricto a propósito, al revés que los predicados de `roles.ts`: responde
+ * "¿es este valor exactamente uno de los que la columna admite?". Tras el CHECK
+ * de `project_shares.permissions` sólo cabe la minúscula, así que un predicado
+ * que diera por bueno 'VIEW' mentiría sobre lo que se puede guardar.
+ * La tolerancia con espacios y casing vive en `normalizeSharePermissions`,
+ * que es la puerta de entrada.
+ */
+export function isSharePermission(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return (SHARE_PERMISSIONS as readonly string[]).includes(value);
+}
+
+/**
+ * `" View , COMMENT "` → `"view,comment"`. Devuelve null si algún elemento no
+ * está en el catálogo: en un permiso, descartar en silencio lo desconocido es
+ * peor que fallar, porque concede o quita accesos sin que nadie se entere.
+ */
+export function normalizeSharePermissions(
+    value: string | string[] | null | undefined,
+): string | null {
+    if (value === null || value === undefined) return null;
+
+    const parts = (Array.isArray(value) ? value : String(value).split(','))
+        .map((p) => String(p).trim().toLowerCase())
+        .filter((p) => p.length > 0);
+
+    if (parts.length === 0) return null;
+    if (!parts.every((p) => (SHARE_PERMISSIONS as readonly string[]).includes(p))) return null;
+
+    // Se reordena según el catálogo para que dos peticiones equivalentes
+    // produzcan la misma cadena en base y el CHECK de T10 sea predecible.
+    return SHARE_PERMISSIONS.filter((p) => parts.includes(p)).join(',');
 }

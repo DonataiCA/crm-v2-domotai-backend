@@ -6,6 +6,9 @@ import {
     PHASE_STATUSES,
     INVOICE_STATUSES,
     SHARE_PERMISSIONS,
+    DEFAULT_SHARE_PERMISSIONS,
+    isSharePermission,
+    normalizeSharePermissions,
     DEFAULT_TASK_STATUS,
     DEFAULT_TASK_PRIORITY,
     DEFAULT_PROJECT_STATUS,
@@ -43,10 +46,6 @@ describe('catálogo de enums', () => {
 
     it('expone los cinco estados de factura', () => {
         expect([...INVOICE_STATUSES]).toEqual(['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED']);
-    });
-
-    it('expone los tres permisos de compartición', () => {
-        expect([...SHARE_PERMISSIONS]).toEqual(['VIEW', 'COMMENT', 'EDIT']);
     });
 
     it('ningún catálogo tiene valores duplicados', () => {
@@ -302,5 +301,58 @@ describe('isCompletedStatus', () => {
         expect(isCompletedStatus('')).toBe(false);
         expect(isCompletedStatus('   ')).toBe(false);
         expect(isCompletedStatus('urgentísimo')).toBe(false);
+    });
+});
+
+describe('SHARE_PERMISSIONS', () => {
+    it('usa el vocabulario real del portal, en minúscula', () => {
+        expect([...SHARE_PERMISSIONS]).toEqual(['view', 'comment', 'create_task', 'edit_task']);
+    });
+
+    it('cubre los tres permisos que portal.controller comprueba', () => {
+        // portal.controller.ts:382, 463 y 515
+        for (const p of ['comment', 'create_task', 'edit_task']) {
+            expect(isSharePermission(p)).toBe(true);
+        }
+    });
+
+    it('rechaza el vocabulario en mayúscula que declaraba el catálogo viejo', () => {
+        expect(isSharePermission('VIEW')).toBe(false);
+        expect(isSharePermission('EDIT')).toBe(false);
+    });
+});
+
+describe('normalizeSharePermissions', () => {
+    it('acepta las tres combinaciones que hay en la base', () => {
+        expect(normalizeSharePermissions('view')).toBe('view');
+        expect(normalizeSharePermissions('view,comment')).toBe('view,comment');
+        expect(normalizeSharePermissions('view,comment,create_task,edit_task'))
+            .toBe('view,comment,create_task,edit_task');
+    });
+
+    it('acepta un array y lo devuelve como CSV', () => {
+        expect(normalizeSharePermissions(['view', 'comment'])).toBe('view,comment');
+    });
+
+    it('tolera espacios y casing sin tolerar valores inventados', () => {
+        expect(normalizeSharePermissions(' View , COMMENT ')).toBe('view,comment');
+        expect(normalizeSharePermissions('view,borrar_todo')).toBeNull();
+    });
+
+    it('devuelve null para vacío', () => {
+        expect(normalizeSharePermissions('')).toBeNull();
+        expect(normalizeSharePermissions(null)).toBeNull();
+        expect(normalizeSharePermissions([])).toBeNull();
+    });
+
+    it('elimina duplicados conservando el orden del catálogo', () => {
+        expect(normalizeSharePermissions('comment,view,comment')).toBe('view,comment');
+    });
+});
+
+describe('DEFAULT_SHARE_PERMISSIONS', () => {
+    it('coincide con el default que portal.controller ya aplicaba', () => {
+        expect(DEFAULT_SHARE_PERMISSIONS).toBe('view,comment');
+        expect(normalizeSharePermissions(DEFAULT_SHARE_PERMISSIONS)).toBe('view,comment');
     });
 });
