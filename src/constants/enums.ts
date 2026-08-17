@@ -103,8 +103,10 @@ export function normalizeInvoiceStatus(value: string | null | undefined): Invoic
 }
 
 /**
- * Reemplaza el array `COMPLETED_STATES` de `capacity.repository.ts`, que existía
- * sólo porque la base tiene cuatro grafías de lo mismo.
+ * Para comparaciones en JavaScript sobre valores que pueden venir de fuera
+ * (importaciones, salida de la IA), no para filtros de Prisma: en un `where`
+ * no cabe una función, y ahí va el literal del catálogo. Con la base ya
+ * normalizada, `status: { not: 'COMPLETED' }` es exacto.
  */
 export function isCompletedStatus(value: string | null | undefined): boolean {
     return normalizeTaskStatus(value) === 'COMPLETED';

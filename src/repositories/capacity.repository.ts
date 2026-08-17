@@ -2,8 +2,10 @@ import { prisma } from '../config/prisma';
 import { isTeamRole } from '../constants/roles';
 import { ARCHIVED_PROJECT_STATUS } from '../constants/enums';
 
-// TODO(P1): mismo patrón que TEAM_ROLES, pendiente de extraer al catálogo de estados.
-const COMPLETED_STATES = ['COMPLETED', 'DONE', 'completed', 'done'];
+// `status: { not: 'COMPLETED' }` y no `isCompletedStatus`: son filtros de
+// Prisma, no comparaciones en JavaScript, así que no admiten una función.
+// Antes había aquí un COMPLETED_STATES con cuatro grafías de lo mismo.
+
 
 export const CapacityRepository = {
     /**
@@ -33,13 +35,13 @@ export const CapacityRepository = {
             prisma.projectTask.count({
                 where: {
                     assignedTo: profileId,
-                    status: { notIn: COMPLETED_STATES },
+                    status: { not: 'COMPLETED' },
                 },
             }),
             prisma.task.count({
                 where: {
                     assignedTo: profileId,
-                    status: { notIn: COMPLETED_STATES },
+                    status: { not: 'COMPLETED' },
                 },
             }),
         ]);
@@ -54,14 +56,14 @@ export const CapacityRepository = {
             prisma.projectTask.count({
                 where: {
                     assignedTo: profileId,
-                    status: { notIn: COMPLETED_STATES },
+                    status: { not: 'COMPLETED' },
                     dueDate: { lt: now },
                 },
             }),
             prisma.task.count({
                 where: {
                     assignedTo: profileId,
-                    status: { notIn: COMPLETED_STATES },
+                    status: { not: 'COMPLETED' },
                     dueDate: { lt: now },
                 },
             }),
@@ -126,7 +128,7 @@ export const CapacityRepository = {
             where: {
                 assignedTo: profileId,
                 organizationId: orgId,
-                status: { notIn: COMPLETED_STATES },
+                status: { not: 'COMPLETED' },
             },
             _count: { _all: true },
         });
@@ -146,7 +148,7 @@ export const CapacityRepository = {
             where: {
                 assignedTo: profileId,
                 organizationId: orgId,
-                status: { notIn: COMPLETED_STATES },
+                status: { not: 'COMPLETED' },
                 dueDate: { lt: now },
             },
             _count: { _all: true },
@@ -171,7 +173,7 @@ export const CapacityRepository = {
             where: {
                 assignedTo: profileId,
                 organizationId: orgId,
-                status: { notIn: COMPLETED_STATES },
+                status: { not: 'COMPLETED' },
                 dueDate: { gte: now },
             },
             select: {
