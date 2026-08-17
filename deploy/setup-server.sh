@@ -28,11 +28,20 @@ if ! docker compose version &> /dev/null; then
     sudo apt-get install -y -qq docker-compose-plugin
 fi
 
-# ── Install Node.js 20 LTS ──────────────────────────────────────────────────
-echo "[3/8] Installing Node.js 20..."
-if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# ── Install Node.js 24 LTS ──────────────────────────────────────────────────
+# Debe coincidir con "engines" de package.json (>=22.12.0) y con .nvmrc.
+# openai v7 y google-auth-library v11 exigen Node >= 22: con Node 20 el
+# servidor no arranca. La comprobación mira la versión, no la mera presencia
+# del binario, para que un servidor con Node 20 preinstalado también se corrija.
+echo "[3/8] Installing Node.js 24 LTS..."
+NODE_MAJOR_REQUIRED=22
+CURRENT_MAJOR="$(node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/')"
+if [ -z "$CURRENT_MAJOR" ] || [ "$CURRENT_MAJOR" -lt "$NODE_MAJOR_REQUIRED" ]; then
+    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
     sudo apt-get install -y -qq nodejs
+    echo "  Node $(node -v) instalado"
+else
+    echo "  Node $(node -v) ya cumple el mínimo (>= v$NODE_MAJOR_REQUIRED)"
 fi
 
 # Install PM2 globally

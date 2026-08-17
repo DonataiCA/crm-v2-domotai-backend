@@ -1,6 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { qaId, daysAgo, daysFromNow } from '../ids';
 import { ORG_A, ORG_B, P_ADMIN, P_SALES_1, P_FREELANCER, P_BETA_ADMIN } from '../core';
+// Estados desde el catálogo: projects_status_check (migración
+// add_catalog_checks) sólo admite NOT_STARTED | IN_PROGRESS | ON_HOLD |
+// COMPLETED | ARCHIVED. Los literales antiguos violan la restricción.
+import { ARCHIVED_PROJECT_STATUS, DEFAULT_PROJECT_STATUS } from '../../../../src/constants/enums';
 
 export const PR_PORTAL = qaId('project:portal');
 export const PR_APP = qaId('project:app');
@@ -25,7 +29,7 @@ export async function seedProjects(prisma: PrismaClient): Promise<string> {
         {
             id: PR_PORTAL, name: 'Portal de clientes Andina',
             description: 'Portal web para que el cliente siga el avance de sus obras.',
-            status: 'In Progress', complexity: 'high', price: 42000, revenue: 18000,
+            status: 'IN_PROGRESS', complexity: 'high', price: 42000, revenue: 18000,
             startDate: daysAgo(45), endDate: daysFromNow(45),
             prd: 'Objetivo: entregar un portal donde el cliente consulte avance, documentos y facturas.\n\nAlcance: autenticación, tablero de avance, descarga de documentos y notificaciones por correo.\n\nFuera de alcance: pagos en línea.',
             projectLeadId: P_ADMIN,
@@ -35,7 +39,7 @@ export async function seedProjects(prisma: PrismaClient): Promise<string> {
         {
             id: PR_APP, name: 'App móvil de terreno',
             description: 'Aplicación para reportes de terreno sin conexión.',
-            status: 'In Progress', complexity: 'medium', price: 28000, revenue: 0,
+            status: 'IN_PROGRESS', complexity: 'medium', price: 28000, revenue: 0,
             startDate: daysAgo(20), endDate: daysFromNow(70),
             prd: 'Aplicación móvil para capturar reportes en obra sin conexión y sincronizar al recuperar señal.',
             projectLeadId: P_FREELANCER,
@@ -46,15 +50,15 @@ export async function seedProjects(prisma: PrismaClient): Promise<string> {
             // deben mostrar un estado vacío, no romperse.
             id: PR_SIN_FASES, name: 'Consultoría Norte (sin planificar)',
             description: 'Aún sin fases ni tareas cargadas.',
-            status: 'Not Started', complexity: 'low', price: 9000, revenue: 0,
+            status: DEFAULT_PROJECT_STATUS, complexity: 'low', price: 9000, revenue: 0,
             startDate: null, endDate: null, prd: null,
             projectLeadId: null, productionUrl: null, githubOwner: null, repositoryName: null,
         },
         {
-            // Caso límite: archivado. El archivo se marca con status='Archived'.
+            // Caso límite: archivado. El archivo se marca con el estado ARCHIVED.
             id: PR_ARCHIVADO, name: 'Migración legacy 2025 (archivado)',
             description: 'Cerrado y archivado.',
-            status: 'Archived', complexity: 'medium', price: 15000, revenue: 15000,
+            status: ARCHIVED_PROJECT_STATUS, complexity: 'medium', price: 15000, revenue: 15000,
             startDate: daysAgo(300), endDate: daysAgo(120), prd: null,
             projectLeadId: P_ADMIN, productionUrl: null, githubOwner: null, repositoryName: null,
         },
@@ -72,7 +76,7 @@ export async function seedProjects(prisma: PrismaClient): Promise<string> {
         where: { id: PR_BETA },
         update: {},
         create: {
-            id: PR_BETA, name: 'Proyecto Contoso (org B)', status: 'In Progress',
+            id: PR_BETA, name: 'Proyecto Contoso (org B)', status: 'IN_PROGRESS',
             price: 10000, createdBy: P_BETA_ADMIN, projectLeadId: P_BETA_ADMIN, organizationId: ORG_B,
         },
     });

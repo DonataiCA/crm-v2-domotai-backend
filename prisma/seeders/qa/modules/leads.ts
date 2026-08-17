@@ -10,11 +10,13 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
     // Un lead por cada etapa del pipeline: el tablero kanban debe mostrar
     // todas las columnas pobladas y el dashboard comercial debe poder calcular
     // la proyección ponderada con al menos un lead en cada peso.
+    // `stage` guarda el SLUG, no el nombre legible: la restricción
+    // leads_stage_slug_check (migración add_catalog_checks) exige `^[a-z0-9_]+$`.
     const porEtapa = STAGES.map((s, i) => ({
         id: qaId(`lead:${s.key}`),
         name: `Oportunidad ${s.name}`,
         details: `Lead de prueba situado en la etapa "${s.name}" para validar el tablero y la proyección ponderada (peso ${s.weight}%).`,
-        stage: s.name,
+        stage: s.key,
         price: 3000 + i * 2500,
         pricingType: 'flat',
         contactId: i % 2 === 0 ? CT_ROJAS : CT_MENA,
@@ -33,7 +35,7 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
             // así que sembrarlos permite ver el comportamiento correcto esperado.
             id: qaId('lead:recurrente'),
             name: 'Soporte mensual Andina', details: 'Contrato recurrente de soporte. Prueba de pricingType=recurring.',
-            stage: 'Negociación', price: 1200, pricingType: 'recurring',
+            stage: 'negociacion', price: 1200, pricingType: 'recurring',
             contactId: CT_ROJAS, companyId: CO_ANDINA, assignedTo: P_SALES_1,
             nextFollowUp: daysFromNow(5), converted: false, convertedAt: null, deletedAt: null,
         },
@@ -41,7 +43,7 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
             // Caso límite: archivado. Solo debe salir en /leads/archived.
             id: qaId('lead:archivado'),
             name: 'Oportunidad descartada 2025', details: 'Archivada para probar el filtro deletedAt.',
-            stage: 'Perdido', price: 800, pricingType: 'flat',
+            stage: 'perdido', price: 800, pricingType: 'flat',
             contactId: CT_MENA, companyId: CO_NORTE, assignedTo: P_SALES_2,
             nextFollowUp: null, converted: false, convertedAt: null, deletedAt: daysAgo(15),
         },
@@ -49,7 +51,7 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
             // Caso límite: sin contacto, sin empresa y sin responsable.
             id: qaId('lead:huerfano'),
             name: 'Lead entrante sin calificar', details: 'Llegó por formulario web, aún sin asignar.',
-            stage: 'Nuevo', price: 0, pricingType: 'flat',
+            stage: 'nuevo', price: 0, pricingType: 'flat',
             contactId: null, companyId: null, assignedTo: null,
             nextFollowUp: null, converted: false, convertedAt: null, deletedAt: null,
         },
@@ -71,7 +73,8 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
 
     // ── Historial de etapas del lead ganado ─────────────────────────────────
     // Permite comprobar el cálculo de duración por etapa.
-    const recorrido = ['Nuevo', 'Contactado', 'Propuesta', 'Negociación', 'Ganado'];
+    // Slugs, no nombres: lead_stage_history_slug_check aplica el mismo formato.
+    const recorrido = ['nuevo', 'contactado', 'propuesta', 'negociacion', 'ganado'];
     for (let i = 0; i < recorrido.length; i++) {
         const entered = daysAgo(40 - i * 8);
         const exited = i < recorrido.length - 1 ? daysAgo(40 - (i + 1) * 8) : null;
@@ -124,7 +127,7 @@ export async function seedLeads(prisma: PrismaClient): Promise<string> {
         where: { id: qaId('lead:beta') },
         update: {},
         create: {
-            id: qaId('lead:beta'), name: 'Oportunidad Contoso (org B)', stage: 'Nuevo',
+            id: qaId('lead:beta'), name: 'Oportunidad Contoso (org B)', stage: 'nuevo',
             price: 5000, contactId: CT_BETA, companyId: CO_BETA,
             pipelineId: qaId('pipeline:beta'), assignedTo: P_BETA_ADMIN,
             createdBy: P_BETA_ADMIN, organizationId: ORG_B,

@@ -49,10 +49,14 @@ export const DashboardController = {
                 },
             });
 
-            const stageMap = new Map(activePipeline.stages.map(s => [s.name, s]));
+            // El cruce va SIEMPRE por slug: desde add_catalog_checks la columna
+            // leads.stage está restringida a `^[a-z0-9_]+$`, así que nunca
+            // contiene el nombre legible. `name` se sigue devolviendo tal cual
+            // para que la interfaz muestre "Negociación" y no "negociacion".
+            const stageMap = new Map(activePipeline.stages.map(s => [s.slug, s]));
 
             const stageStats = activePipeline.stages.map(stage => {
-                const stageLeads = leads.filter(l => l.stage === stage.name);
+                const stageLeads = leads.filter(l => l.stage === stage.slug);
                 const companiesSet = new Map<string, string>();
                 stageLeads.forEach(l => {
                     if (l.company) companiesSet.set(l.company.id, l.company.name);
