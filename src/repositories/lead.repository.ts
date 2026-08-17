@@ -35,7 +35,11 @@ const leadIncludes = {
     project: { select: { id: true, name: true } },
     assignee: userRefSelect,
     creator: userRefSelect,
-    pipeline: true,
+    // Con sus etapas: `Lead.stage` guarda un slug, así que sin el catálogo de
+    // etapas del pipeline el cliente no puede mostrar ni el nombre visible ni
+    // decidir el color por `category`. Antes era `pipeline: true` y la UI
+    // reconstruía la etiqueta partiendo el propio valor por "_".
+    pipeline: { include: { stages: { orderBy: { order: 'asc' as const } } } },
     events: {
         orderBy: { createdAt: 'desc' as const },
         include: { creator: userRefSelect },
