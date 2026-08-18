@@ -18,9 +18,19 @@ describe('createProjectSchema.status', () => {
         }
     });
 
-    it('rechaza el vocabulario Title Case que había en la base', () => {
-        expect(createProjectSchema.safeParse({ name: 'P', status: 'Not Started' }).success).toBe(false);
-        expect(createProjectSchema.safeParse({ name: 'P', status: 'Archived' }).success).toBe(false);
+    it('acepta el vocabulario Title Case histórico y lo guarda canónico', () => {
+        // Tolerante al leer, estricto al guardar: los dos repos se despliegan por
+        // separado, así que un cliente viejo sigue mandando la grafía con espacios.
+        const notStarted = createProjectSchema.safeParse({ name: 'P', status: 'Not Started' });
+        expect(notStarted.success && notStarted.data.status).toBe('NOT_STARTED');
+
+        const archived = createProjectSchema.safeParse({ name: 'P', status: 'Archived' });
+        expect(archived.success && archived.data.status).toBe('ARCHIVED');
+    });
+
+    it('resuelve también los alias históricos', () => {
+        const active = createProjectSchema.safeParse({ name: 'P', status: 'active' });
+        expect(active.success && active.data.status).toBe('IN_PROGRESS');
     });
 
     it('rechaza un estado inventado', () => {
@@ -33,16 +43,26 @@ describe('createProjectSchema.status', () => {
 });
 
 describe('updateProjectSchema', () => {
-    it('hereda la restricción de estado', () => {
+    it('hereda la restricción de estado y su tolerancia', () => {
         expect(updateProjectSchema.safeParse({ status: 'ARCHIVED' }).success).toBe(true);
-        expect(updateProjectSchema.safeParse({ status: 'Archived' }).success).toBe(false);
+
+        const titleCase = updateProjectSchema.safeParse({ status: 'Archived' });
+        expect(titleCase.success && titleCase.data.status).toBe('ARCHIVED');
+
+        expect(updateProjectSchema.safeParse({ status: 'Cancelado' }).success).toBe(false);
     });
 });
 
 describe('createPhaseSchema.status', () => {
-    it('sólo acepta los estados de fase, en minúscula', () => {
+    it('guarda los estados de fase en minúscula, venga como venga', () => {
         expect(createPhaseSchema.safeParse({ name: 'F1', status: 'active' }).success).toBe(true);
-        expect(createPhaseSchema.safeParse({ name: 'F1', status: 'ACTIVE' }).success).toBe(false);
+
+        const upper = createPhaseSchema.safeParse({ name: 'F1', status: 'ACTIVE' });
+        expect(upper.success && upper.data.status).toBe('active');
+    });
+
+    it('rechaza un estado de fase que no existe', () => {
+        expect(createPhaseSchema.safeParse({ name: 'F1', status: 'pendiente' }).success).toBe(false);
     });
 });
 
@@ -61,9 +81,16 @@ describe('createProjectTaskSchema', () => {
         expect(result.success).toBe(false);
     });
 
-    it('rechaza un estado fuera del catálogo', () => {
+    it('resuelve DONE como alias de COMPLETED en vez de rechazarlo', () => {
         const result = createProjectTaskSchema.safeParse({
             title: 'T', phaseId: PHASE_ID, status: 'DONE',
+        });
+        expect(result.success && result.data.status).toBe('COMPLETED');
+    });
+
+    it('rechaza un estado que no es ni canónico ni alias', () => {
+        const result = createProjectTaskSchema.safeParse({
+            title: 'T', phaseId: PHASE_ID, status: 'EN_LIMBO',
         });
         expect(result.success).toBe(false);
     });

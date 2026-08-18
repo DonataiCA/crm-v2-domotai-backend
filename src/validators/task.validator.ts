@@ -1,10 +1,14 @@
 import { z } from 'zod';
+import { TASK_STATUSES, TASK_PRIORITIES, normalizeTaskStatus, normalizeTaskPriority } from '../constants/enums';
+import { tolerantEnum } from './catalog';
 
 export const createTaskSchema = z.object({
     title: z.string().min(1, 'Title is required').max(500),
     description: z.string().max(10000).optional().nullable(),
-    status: z.string().max(50).optional(),
-    priority: z.string().max(20).optional().nullable(),
+    // Antes eran cadenas libres: cualquier valor pasaba el validador y lo
+    // rechazaba la CHECK de la base, convirtiendo un 400 legible en un 500.
+    status: tolerantEnum(TASK_STATUSES, normalizeTaskStatus).optional(),
+    priority: tolerantEnum(TASK_PRIORITIES, normalizeTaskPriority).optional().nullable(),
     projectId: z.string().uuid().optional().nullable(),
     contactId: z.string().uuid().optional().nullable(),
     leadId: z.string().uuid().optional().nullable(),

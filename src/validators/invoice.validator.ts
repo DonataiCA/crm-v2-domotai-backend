@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { INVOICE_STATUSES, normalizeInvoiceStatus } from '../constants/enums';
+import { tolerantEnum } from './catalog';
 
 export const createInvoiceSchema = z.object({
     invoiceNumber: z.string().max(50).optional(),
     contactId: z.string().uuid().optional().nullable(),
     projectId: z.string().uuid().optional().nullable(),
-    status: z.enum(['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED']).optional(),
+    status: tolerantEnum(INVOICE_STATUSES, normalizeInvoiceStatus).optional(),
     issueDate: z.string().optional().nullable(),
     dueDate: z.string().optional().nullable(),
     subtotal: z.number().or(z.string().transform(Number)).optional(),
