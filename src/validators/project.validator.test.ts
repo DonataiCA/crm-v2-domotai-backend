@@ -6,8 +6,13 @@ import {
     updateProjectSchema,
     createPhaseSchema,
     createProjectTaskSchema,
+    importTasksSchema,
 } from './project.validator';
-import { MAX_CHAT_MESSAGE_CHARS, MAX_DOCUMENT_CHARS } from '../constants/document';
+import {
+    MAX_CHAT_MESSAGE_CHARS,
+    MAX_DOCUMENT_CHARS,
+    MAX_TEMPLATE_CHARS,
+} from '../constants/document';
 
 const PHASE_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -234,5 +239,50 @@ describe('chatTaskSchema — tipos', () => {
     it('rechaza un mensaje que no es una cadena', () => {
         expect(chatTaskSchema.safeParse({ message: 42 }).success).toBe(false);
         expect(chatTaskSchema.safeParse({ message: { texto: 'hola' } }).success).toBe(false);
+    });
+});
+
+/**
+ * `importTasksSchema` valida el cuerpo de `POST /projects/:projectId/import-tasks`. A
+ * diferencia de `chatTaskSchema` no hay `message`: el archivo es toda la petición.
+ */
+describe('importTasksSchema', () => {
+    it('acepta un documento y nada más', () => {
+        const result = importTasksSchema.safeParse({ document: doc() });
+
+        expect(result.success && result.data).toEqual({ document: doc() });
+    });
+
+    it('exige el documento', () => {
+        expect(importTasksSchema.safeParse({}).success).toBe(false);
+        expect(importTasksSchema.safeParse({ document: null }).success).toBe(false);
+    });
+
+    it('rechaza un documento vacío', () => {
+        expect(importTasksSchema.safeParse({ document: doc({ content: '' }) }).success).toBe(false);
+    });
+
+    it('acepta el tope de caracteres y rechaza uno más', () => {
+        const at = doc({ content: 'a'.repeat(MAX_TEMPLATE_CHARS) });
+        const over = doc({ content: 'a'.repeat(MAX_TEMPLATE_CHARS + 1) });
+
+        expect(importTasksSchema.safeParse({ document: at }).success).toBe(true);
+        expect(importTasksSchema.safeParse({ document: over }).success).toBe(false);
+    });
+
+    it('acepta un archivo mucho mayor que el tope del chat', () => {
+        const content = 'a'.repeat(MAX_DOCUMENT_CHARS + 1);
+
+        expect(importTasksSchema.safeParse({ document: doc({ content }) }).success).toBe(true);
+        expect(chatTaskSchema.safeParse({ document: doc({ content }) }).success).toBe(false);
+    });
+
+    it('descarta los campos desconocidos, incluido el message del chat', () => {
+        const result = importTasksSchema.safeParse({
+            document: { ...doc(), tamano: 1024 },
+            message: 'esto ya no existe en este endpoint',
+        });
+
+        expect(result.success && result.data).toEqual({ document: doc() });
     });
 });

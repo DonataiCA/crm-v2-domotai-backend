@@ -3,7 +3,7 @@ import { ProjectController } from '../controllers/project.controller';
 import { ProjectMonitorController } from '../controllers/project-monitor.controller';
 import { authenticate, requireOrgMembership } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
-import { createProjectSchema, updateProjectSchema, createPhaseSchema, createProjectTaskSchema, chatTaskSchema } from '../validators/project.validator';
+import { createProjectSchema, updateProjectSchema, createPhaseSchema, createProjectTaskSchema, chatTaskSchema, importTasksSchema } from '../validators/project.validator';
 
 const router = Router();
 
@@ -33,6 +33,9 @@ router.get('/:id/tracking', ProjectController.tracking);
 // AI Task Generation
 router.post('/:projectId/generate-tasks', ProjectController.generateTasks);
 router.post('/:projectId/chat-task', validate(chatTaskSchema), ProjectController.chatTask);
+
+// Alta de tareas desde la plantilla Markdown. Sin IA: la lee `parseTaskTemplate`.
+router.post('/:projectId/import-tasks', validate(importTasksSchema), ProjectController.importTasks);
 
 // Phases
 router.post('/:projectId/phases', validate(createPhaseSchema), ProjectController.createPhase);

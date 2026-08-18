@@ -31,3 +31,16 @@ export type AcceptedDocumentExtension = (typeof ACCEPTED_DOCUMENT_EXTENSIONS)[nu
 
 /** Tope del nombre de archivo, que sólo se usa para mostrarlo y para etiquetar el prompt. */
 export const MAX_DOCUMENT_FILENAME_CHARS = 255;
+
+/**
+ * Tope del archivo de plantilla que acepta `POST /projects/:projectId/import-tasks`.
+ *
+ * Es mucho más alto que `MAX_DOCUMENT_CHARS` porque este contenido **no entra en ningún
+ * prompt**: lo lee `parseTaskTemplate`, que es código y no un modelo. El límite existe
+ * sólo para que un archivo absurdo no llegue al parser, y el que manda de verdad es
+ * `MAX_TEMPLATE_TASKS`.
+ */
+export const MAX_TEMPLATE_CHARS = 40000;
+
+/** Tope de tareas por archivo de plantilla. El límite es inclusivo. */
+export const MAX_TEMPLATE_TASKS = 100;

@@ -229,6 +229,7 @@ export const ProjectRepository = {
         organizationId: string;
         title: string;
         description?: string;
+        conclusion?: string;
         status?: string;
         priority?: string;
         orderIndex?: number;
@@ -243,6 +244,90 @@ export const ProjectRepository = {
             data,
             include: TASK_INCLUDE,
         }),
+
+    /**
+     * Contexto que necesita la importación por plantilla para traducir los nombres que
+     * escribió el usuario a claves ajenas: las fases del proyecto con el `orderIndex`
+     * libre de cada una, quién puede ser responsable y qué títulos ya están cogidos.
+     *
+     * Va en una sola lectura porque el import es todo o nada: o se resuelve el archivo
+     * entero o no se crea nada, así que no tiene sentido ir a la base por tarea.
+     *
+     * Los miembros del equipo del proyecto tienen preferencia; si el proyecto no tiene
+     * equipo se cae a los de la organización, el mismo criterio que ya usa `chatTask`.
+     */
+    getImportContext: async (projectId: string, orgId: string) => {
+        const [phases, tasks, teamMembers, orgMembers] = await Promise.all([
+            prisma.projectPhase.findMany({
+                where: { projectId },
+                orderBy: { orderIndex: 'asc' },
+                select: { id: true, name: true },
+            }),
+            prisma.projectTask.findMany({
+                where: { projectId },
+                select: { title: true, phaseId: true, orderIndex: true },
+            }),
+            prisma.projectTeamMember.findMany({
+                where: { projectId, project: { organizationId: orgId } },
+                include: { profile: { select: { id: true, fullName: true, email: true } } },
+            }),
+            prisma.organizationMember.findMany({
+                where: { organizationId: orgId },
+                include: { profile: { select: { id: true, fullName: true, email: true } } },
+            }),
+        ]);
+
+        const maxOrderIndex = new Map<string, number>();
+        for (const task of tasks) {
+            if (!task.phaseId) continue;
+            const current = maxOrderIndex.get(task.phaseId);
+            if (current === undefined || task.orderIndex > current) {
+                maxOrderIndex.set(task.phaseId, task.orderIndex);
+            }
+        }
+
+        const source = teamMembers.length > 0 ? teamMembers : orgMembers;
+
+        return {
+            phases: phases.map((phase) => ({
+                id: phase.id,
+                name: phase.name,
+                nextOrderIndex: (maxOrderIndex.get(phase.id) ?? -1) + 1,
+            })),
+            members: source.map((member) => ({
+                id: member.profile?.id ?? member.userId,
+                fullName: member.profile?.fullName ?? null,
+                email: member.profile?.email ?? null,
+            })),
+            existingTitles: tasks.map((task) => task.title),
+        };
+    },
+
+    /**
+     * Alta en bloque de la importación por plantilla. Una transacción y no un bucle de
+     * `createTask`: un archivo a medio importar deja al usuario sin forma de reintentar
+     * sin duplicar la mitad de las tareas.
+     */
+    createTasks: (
+        rows: Array<{
+            projectId: string;
+            organizationId: string;
+            phaseId: string;
+            title: string;
+            description: string | null;
+            conclusion: string | null;
+            status: string;
+            priority: string;
+            startDate: Date | null;
+            dueDate: Date | null;
+            assignedTo: string | null;
+            orderIndex: number;
+            createdBy?: string;
+        }>,
+    ) =>
+        prisma.$transaction(
+            rows.map((data) => prisma.projectTask.create({ data, include: TASK_INCLUDE })),
+        ),
 
     /**
      * `updateMany` + relectura en vez de `update`: `update` sólo acepta claves

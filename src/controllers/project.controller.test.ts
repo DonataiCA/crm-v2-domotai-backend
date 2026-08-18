@@ -6,6 +6,7 @@ const {
     findById, addMember, getMembers, removeMember,
     taskFindFirst, commentCreate, commentDeleteMany,
     gitMetricFindMany, gitCommitFindMany, orgMemberFindFirst,
+    getImportContext, createTasks,
 } = vi.hoisted(() => ({
     findById: vi.fn(),
     addMember: vi.fn(),
@@ -17,10 +18,14 @@ const {
     gitMetricFindMany: vi.fn(),
     gitCommitFindMany: vi.fn(),
     orgMemberFindFirst: vi.fn(),
+    getImportContext: vi.fn(),
+    createTasks: vi.fn(),
 }));
 
 vi.mock('../repositories/project.repository', () => ({
-    ProjectRepository: { findById, addMember, getMembers, removeMember },
+    ProjectRepository: {
+        findById, addMember, getMembers, removeMember, getImportContext, createTasks,
+    },
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -240,5 +245,120 @@ describe('ProjectController.githubCommits', () => {
         expect(gitCommitFindMany).toHaveBeenCalledWith(
             expect.objectContaining({ where: { projectId: 'proj-1', organizationId: 'org-A' } }),
         );
+    });
+});
+
+/**
+ * `importTasks` es todo o nada: o el archivo entero se resuelve, o no se crea ninguna
+ * tarea. Estos tests cubren el cableado (aislamiento por organización, el 422, el
+ * `createdBy`); las reglas de la plantilla en sí están en `task-template.test.ts` y
+ * `task-import.test.ts`, que son puros.
+ */
+describe('ProjectController.importTasks', () => {
+    const TEMPLATE = [
+        '## Configurar el pipeline de CI',
+        '',
+        '- **Área:** DevOps',
+        '- **Responsable:** Ana Pérez',
+        '- **Estado:** IN_PROGRESS',
+        '- **Prioridad:** HIGH',
+        '- **Inicio:** 2026-08-20',
+        '- **Vencimiento:** 2026-08-27',
+        '- **Descripción:** Montar el pipeline.',
+        '- **Conclusión:** Verde en main.',
+        '',
+    ].join('\n');
+
+    const importReq = (content: string) => fakeReq({
+        params: { projectId: 'proj-1' },
+        body: { document: { fileName: 'tareas.md', content } },
+        orgId: 'org-A',
+        user: { profileId: 'profile-quien-sube', role: 'admin' },
+    });
+
+    const IMPORT_CONTEXT = {
+        phases: [{ id: 'phase-devops', name: 'DevOps', nextOrderIndex: 3 }],
+        members: [{ id: 'profile-ana', fullName: 'Ana Pérez', email: 'ana@domotai.com' }],
+        existingTitles: [],
+    };
+
+    it('responde 404 y no lee nada cuando el proyecto es de otra organización', async () => {
+        findById.mockResolvedValue(null);
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq(TEMPLATE), res);
+
+        expect(findById).toHaveBeenCalledWith('proj-1', 'org-A');
+        expect(getImportContext).not.toHaveBeenCalled();
+        expect(createTasks).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('crea las tareas con todos los campos de la plantilla', async () => {
+        findById.mockResolvedValue({ id: 'proj-1' });
+        getImportContext.mockResolvedValue(IMPORT_CONTEXT);
+        createTasks.mockResolvedValue([{ id: 'task-1' }]);
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq(TEMPLATE), res);
+
+        expect(createTasks).toHaveBeenCalledWith([
+            {
+                projectId: 'proj-1',
+                organizationId: 'org-A',
+                phaseId: 'phase-devops',
+                title: 'Configurar el pipeline de CI',
+                description: 'Montar el pipeline.',
+                conclusion: 'Verde en main.',
+                status: 'IN_PROGRESS',
+                priority: 'HIGH',
+                startDate: new Date('2026-08-20T00:00:00.000Z'),
+                dueDate: new Date('2026-08-27T00:00:00.000Z'),
+                assignedTo: 'profile-ana',
+                orderIndex: 3,
+                // Profile.id, no User.id: es a Profile a donde apunta la FK.
+                createdBy: 'profile-quien-sube',
+            },
+        ]);
+        expect(res.json).toHaveBeenCalledWith({
+            created: 1,
+            tasks: [{ id: 'task-1' }],
+            issues: [],
+        });
+    });
+
+    it('responde 422 sin tocar la base cuando el archivo no se entiende', async () => {
+        findById.mockResolvedValue({ id: 'proj-1' });
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq('No soy una plantilla.'), res);
+
+        expect(getImportContext).not.toHaveBeenCalled();
+        expect(createTasks).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(422);
+        expect(res.json.mock.calls[0][0].issues).toHaveLength(1);
+    });
+
+    it('responde 422 y no crea nada cuando una sola tarea no se puede resolver', async () => {
+        findById.mockResolvedValue({ id: 'proj-1' });
+        getImportContext.mockResolvedValue({ ...IMPORT_CONTEXT, members: [] });
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq(TEMPLATE), res);
+
+        expect(createTasks).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(422);
+        expect(res.json.mock.calls[0][0]).toMatchObject({ created: 0, tasks: [] });
+    });
+
+    it('responde 500 sin filtrar el error cuando la transacción falla', async () => {
+        findById.mockResolvedValue({ id: 'proj-1' });
+        getImportContext.mockResolvedValue(IMPORT_CONTEXT);
+        createTasks.mockRejectedValue(new Error('deadlock'));
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq(TEMPLATE), res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
     });
 });

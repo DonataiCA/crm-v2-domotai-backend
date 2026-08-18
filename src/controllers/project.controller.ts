@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { sendError } from '../utils/error';
 import { ProjectRepository } from '../repositories/project.repository';
 import { generateTasksFromPRD, parseChatActions } from '../utils/ai';
+import { parseTaskTemplate } from '../utils/task-template';
+import { resolveTemplateTasks } from '../utils/task-import';
 import { prisma } from '../config/prisma';
 import crypto from 'crypto';
 import { logAudit } from '../utils/audit';
@@ -454,6 +456,57 @@ export const ProjectController = {
             });
         } catch (error) {
             return sendError(res, 500, 'Failed to generate tasks', error);
+        }
+    },
+
+    /**
+     * `POST /projects/:projectId/import-tasks` — alta de tareas desde la plantilla
+     * Markdown que se descarga del propio panel.
+     *
+     * Hermano de `chatTask` pero sin modelo de por medio: `parseTaskTemplate` lee el
+     * archivo campo a campo y `resolveTemplateTasks` traduce los nombres a claves ajenas.
+     * El mismo archivo produce siempre las mismas tareas y el endpoint funciona sin
+     * `OPENAI_API_KEY`.
+     *
+     * **Todo o nada.** Si queda un solo problema sin resolver no se crea ninguna tarea y
+     * se responde 422 con la lista de problemas y su línea. La alternativa —importar las
+     * buenas y dejar fuera las malas— obliga al usuario a editar el archivo a mano antes
+     * de reintentar para no duplicar la mitad del tablero.
+     */
+    importTasks: async (req: Request, res: Response) => {
+        try {
+            const organizationId = (req as any).orgId;
+            const createdBy = (req as any).user?.profileId as string | undefined;
+            const { projectId } = req.params;
+            // `importTasksSchema` ya garantiza que el documento viene y respeta su tope.
+            const { document } = req.body as { document: { fileName: string; content: string } };
+
+            const project = await ProjectRepository.findById(projectId, organizationId);
+            if (!project) return sendError(res, 404, 'Project not found');
+
+            const parsed = parseTaskTemplate(document.content);
+            if (parsed.issues.length > 0) {
+                return res.status(422).json({ created: 0, tasks: [], issues: parsed.issues });
+            }
+
+            const context = await ProjectRepository.getImportContext(projectId, organizationId);
+            const resolved = resolveTemplateTasks(parsed.tasks, context);
+            if (resolved.issues.length > 0) {
+                return res.status(422).json({ created: 0, tasks: [], issues: resolved.issues });
+            }
+
+            const tasks = await ProjectRepository.createTasks(
+                resolved.tasks.map((task) => ({
+                    ...task,
+                    projectId,
+                    organizationId,
+                    createdBy,
+                })),
+            );
+
+            res.json({ created: tasks.length, tasks, issues: [] });
+        } catch (error) {
+            return sendError(res, 500, 'Failed to import tasks', error);
         }
     },
 
