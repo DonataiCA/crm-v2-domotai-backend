@@ -425,13 +425,11 @@ export const ProjectController = {
 
             const { projectId } = req.params;
             // `chatTaskSchema` ya garantiza que llega al menos uno de los dos, y que
-            // el documento respeta su tope de caracteres. `document` se lee aquí pero
-            // todavía no se usa: lo consume `parseChatActions` en el siguiente paso.
+            // el documento respeta su tope de caracteres.
             const { message, document } = req.body as {
                 message?: string;
                 document?: { fileName: string; content: string };
             };
-            void document;
 
             const project = await ProjectRepository.findById(projectId, organizationId);
             if (!project) return sendError(res, 404, 'Project not found');
@@ -499,6 +497,7 @@ export const ProjectController = {
                 allMembers,
                 existingTasks,
                 project.name,
+                document,
             );
 
             const results: Array<{
