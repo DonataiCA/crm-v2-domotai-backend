@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
+import {
+    MAX_CHAT_MESSAGE_CHARS,
+    MAX_DOCUMENT_CHARS,
+    MAX_DOCUMENT_FILENAME_CHARS,
+} from '../constants/document';
+
 export const PHASE_DATE_RANGE_MESSAGE = 'End date must be on or after the start date';
+export const CHAT_TASK_EMPTY_MESSAGE = 'A message or a document is required';
 export const TASK_DATE_RANGE_MESSAGE = 'Due date must be on or after the start date';
 
 /**
@@ -46,6 +53,36 @@ export const createPhaseSchema = z.object({
             code: z.ZodIssueCode.custom,
             path: ['endDate'],
             message: PHASE_DATE_RANGE_MESSAGE,
+        });
+    }
+});
+
+/**
+ * Cuerpo de `POST /projects/:projectId/chat-task`.
+ *
+ * Acepta una instrucción escrita, un documento arrastrado, o los dos. `message` es
+ * opcional porque soltar un `.md` sin escribir nada es un uso legítimo; el `superRefine`
+ * es lo que impide que lleguen ambos vacíos.
+ *
+ * El documento va en su propio campo y no concatenado al mensaje: es lo que permite
+ * aplicarles topes distintos, delimitarlo dentro del prompt y decir en el error cuál de
+ * los dos se pasó de largo.
+ */
+export const chatTaskSchema = z.object({
+    message: z.string().max(MAX_CHAT_MESSAGE_CHARS).optional(),
+    document: z.object({
+        fileName: z.string().min(1, 'File name is required').max(MAX_DOCUMENT_FILENAME_CHARS),
+        content: z
+            .string()
+            .min(1, 'The document is empty')
+            .max(MAX_DOCUMENT_CHARS, `The document exceeds ${MAX_DOCUMENT_CHARS} characters`),
+    }).strip().optional(),
+}).strip().superRefine((values, ctx) => {
+    if (!values.message?.trim() && !values.document) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['message'],
+            message: CHAT_TASK_EMPTY_MESSAGE,
         });
     }
 });

@@ -424,9 +424,14 @@ export const ProjectController = {
             const organizationId = (req as any).orgId;
 
             const { projectId } = req.params;
-            const { message } = req.body;
-
-            if (!message) return sendError(res, 400, 'message is required');
+            // `chatTaskSchema` ya garantiza que llega al menos uno de los dos, y que
+            // el documento respeta su tope de caracteres. `document` se lee aquí pero
+            // todavía no se usa: lo consume `parseChatActions` en el siguiente paso.
+            const { message, document } = req.body as {
+                message?: string;
+                document?: { fileName: string; content: string };
+            };
+            void document;
 
             const project = await ProjectRepository.findById(projectId, organizationId);
             if (!project) return sendError(res, 404, 'Project not found');
@@ -489,7 +494,7 @@ export const ProjectController = {
 
             // Parse the message into actions (create + update mix)
             const actions = await parseChatActions(
-                message,
+                message ?? '',
                 phases,
                 allMembers,
                 existingTasks,
