@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PROJECT_STATUSES, TASK_STATUSES, TASK_PRIORITIES, PHASE_STATUSES } from '../constants/enums';
 
 export const PHASE_DATE_RANGE_MESSAGE = 'End date must be on or after the start date';
 export const TASK_DATE_RANGE_MESSAGE = 'Due date must be on or after the start date';
@@ -24,7 +25,7 @@ export function isInvertedDateRange(
 export const createProjectSchema = z.object({
     name: z.string().min(1, 'Name is required').max(200),
     description: z.string().max(10000).optional().nullable(),
-    status: z.string().max(50).optional(),
+    status: z.enum(PROJECT_STATUSES).optional(),
     price: z.number().or(z.string().transform(Number)).optional().nullable(),
     revenue: z.number().or(z.string().transform(Number)).optional().nullable(),
     startDate: z.string().optional().nullable(),
@@ -36,7 +37,7 @@ export const updateProjectSchema = createProjectSchema.partial();
 
 export const createPhaseSchema = z.object({
     name: z.string().min(1, 'Phase name is required').max(200),
-    status: z.string().max(50).optional(),
+    status: z.enum(PHASE_STATUSES).optional(),
     startDate: z.string().optional().nullable(),
     endDate: z.string().optional().nullable(),
     orderIndex: z.number().int().optional(),
@@ -53,8 +54,8 @@ export const createPhaseSchema = z.object({
 export const createProjectTaskSchema = z.object({
     title: z.string().min(1, 'Title is required').max(500),
     description: z.string().max(10000).optional().nullable(),
-    status: z.string().max(50).optional(),
-    priority: z.string().max(20).optional().nullable(),
+    status: z.enum(TASK_STATUSES).optional(),
+    priority: z.enum(TASK_PRIORITIES).optional().nullable(),
     // A task must always belong to a phase — no unassigned tasks on creation.
     phaseId: z
         .string({ required_error: 'Phase is required', invalid_type_error: 'Phase is required' })

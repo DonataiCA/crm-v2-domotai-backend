@@ -13,6 +13,11 @@ import {
     TASK_DATE_RANGE_MESSAGE,
 } from '../validators/project.validator';
 import { isClientRole } from '../constants/roles';
+import {
+    ARCHIVED_PROJECT_STATUS,
+    DEFAULT_PROJECT_STATUS,
+    DEFAULT_TASK_STATUS,
+} from '../constants/enums';
 
 export const ProjectController = {
     index: async (req: Request, res: Response) => {
@@ -178,7 +183,10 @@ export const ProjectController = {
 
     updatePhase: async (req: Request, res: Response) => {
         try {
-            const existing = await prisma.projectPhase.findUnique({ where: { id: req.params.phaseId } });
+            const orgId = (req as any).orgId;
+            const existing = await prisma.projectPhase.findFirst({
+                where: { id: req.params.phaseId, project: { organizationId: orgId } },
+            });
             if (!existing) return sendError(res, 404, 'Phase not found');
 
             const data: Record<string, unknown> = { ...req.body };
@@ -195,7 +203,8 @@ export const ProjectController = {
                 }
             }
 
-            const phase = await ProjectRepository.updatePhase(req.params.phaseId, data);
+            const phase = await ProjectRepository.updatePhase(req.params.phaseId, orgId, data);
+            if (!phase) return sendError(res, 404, 'Phase not found');
             res.json(phase);
         } catch (error) {
             return sendError(res, 500, 'Failed to update phase', error);
@@ -204,10 +213,14 @@ export const ProjectController = {
 
     deletePhase: async (req: Request, res: Response) => {
         try {
-            const existing = await prisma.projectPhase.findUnique({ where: { id: req.params.phaseId } });
-            if (!existing) return sendError(res, 404, 'Phase not found');
-
-            await ProjectRepository.deletePhase(req.params.phaseId);
+            const orgId = (req as any).orgId;
+            // No existence pre-check here: deletePhase's deleteMany already filters
+            // by { id, project: { organizationId } } and its count === 0 covers
+            // "doesn't exist" and "not yours" — a separate findFirst would just
+            // duplicate that same query for no benefit (unlike updatePhase, which
+            // needs `existing` to validate the date range against pre-existing values).
+            const deleted = await ProjectRepository.deletePhase(req.params.phaseId, orgId);
+            if (!deleted) return sendError(res, 404, 'Phase not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete phase', error);
@@ -273,7 +286,9 @@ export const ProjectController = {
     updateTask: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const existing = await prisma.projectTask.findUnique({ where: { id: req.params.taskId } });
+            const existing = await prisma.projectTask.findFirst({
+                where: { id: req.params.taskId, organizationId: orgId },
+            });
             if (!existing) return sendError(res, 404, 'Task not found');
 
             const data: Record<string, unknown> = { ...req.body };
@@ -291,7 +306,8 @@ export const ProjectController = {
                 }
             }
 
-            const task = await ProjectRepository.updateTask(req.params.taskId, data);
+            const task = await ProjectRepository.updateTask(req.params.taskId, orgId, data);
+            if (!task) return sendError(res, 404, 'Task not found');
             res.json(task);
             await logAudit(req, { action: 'UPDATE', entityType: 'ProjectTask', entityId: task.id, entityName: task.title });
 
@@ -320,8 +336,10 @@ export const ProjectController = {
 
     deleteTask: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const taskId = req.params.taskId;
-            await ProjectRepository.deleteTask(taskId);
+            const deleted = await ProjectRepository.deleteTask(taskId, orgId);
+            if (!deleted) return sendError(res, 404, 'Task not found');
             res.sendStatus(204);
             await logAudit(req, { action: 'DELETE', entityType: 'ProjectTask', entityId: taskId });
         } catch (error) {
@@ -332,7 +350,8 @@ export const ProjectController = {
     // Team Members
     getMembers: async (req: Request, res: Response) => {
         try {
-            const members = await ProjectRepository.getMembers(req.params.projectId);
+            const orgId = (req as any).orgId;
+            const members = await ProjectRepository.getMembers(req.params.projectId, orgId);
             // Rename 'profile' to 'user' to match frontend expectations
             const transformed = (members as any[]).map(({ profile, ...rest }: any) => ({
                 ...rest,
@@ -346,10 +365,29 @@ export const ProjectController = {
 
     addMember: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const { userId } = req.body;
 
             if (!userId) return sendError(res, 400, 'userId is required');
+
+            // `create` can't validate FK ownership atomically in its own `where`
+            // (see ProjectRepository.addMember) — verify the project is ours first,
+            // same as createTask/createPhase/addRepo do for every project-scoped create.
+            const project = await ProjectRepository.findById(projectId, orgId);
+            if (!project) return sendError(res, 404, 'Project not found');
+
+            // The projectId check alone isn't enough: without this, `userId` could be
+            // a Profile from a different organization, which would then surface its
+            // fullName/email/role through getMembers (exactly what C3 just closed,
+            // through the other door) and become assignable by the AI agent (Tarea 8
+            // builds its assignee list from projectTeamMember). `OrganizationMember.userId`
+            // is a FK to Profile.id, not User.id — same gotcha as everywhere else in
+            // this codebase. Same 404 as the project check, on purpose: a distinct
+            // message would let a caller tell "project not mine" apart from "user not
+            // in my org", leaking whether that profile exists.
+            const membership = await prisma.organizationMember.findFirst({ where: { organizationId: orgId, userId } });
+            if (!membership) return sendError(res, 404, 'Project not found');
 
             const member = await ProjectRepository.addMember(projectId, userId);
             const { profile, ...rest } = member as any;
@@ -402,7 +440,7 @@ export const ProjectController = {
                     organizationId,
                     title: aiTask.title,
                     description: aiTask.description,
-                    status: 'TODO',
+                    status: DEFAULT_TASK_STATUS,
                     priority: aiTask.priority,
                     orderIndex: aiTask.orderIndex,
                 });
@@ -445,7 +483,7 @@ export const ProjectController = {
                     existingTasks.push({
                         id: t.id,
                         title: t.title,
-                        status: t.status || 'TODO',
+                        status: t.status || DEFAULT_TASK_STATUS,
                         priority: t.priority || null,
                         phaseName: phase.name,
                         assigneeName: t.assignee?.fullName || null,
@@ -456,7 +494,7 @@ export const ProjectController = {
                 existingTasks.push({
                     id: t.id,
                     title: t.title,
-                    status: t.status || 'TODO',
+                    status: t.status || DEFAULT_TASK_STATUS,
                     priority: t.priority || null,
                     phaseName: null,
                     assigneeName: t.assignee?.fullName || null,
@@ -464,7 +502,7 @@ export const ProjectController = {
             }
 
             // Members: project team + org fallback
-            const teamMembers = await ProjectRepository.getMembers(projectId);
+            const teamMembers = await ProjectRepository.getMembers(projectId, organizationId);
             const members = (teamMembers as any[]).map((m: any) => ({
                 id: m.userId,
                 name: m.profile?.fullName || m.profile?.email || 'Unknown',
@@ -513,7 +551,7 @@ export const ProjectController = {
                         organizationId,
                         title: a.title,
                         description: a.description,
-                        status: 'TODO',
+                        status: DEFAULT_TASK_STATUS,
                         priority: a.priority || 'MEDIUM',
                         orderIndex: 0,
                         assignedTo: assignedTo || undefined,
@@ -577,7 +615,7 @@ export const ProjectController = {
 
                 if (Object.keys(updates).length === 0) continue;
 
-                const task = await ProjectRepository.updateTask(a.taskId, updates);
+                const task = await ProjectRepository.updateTask(a.taskId, organizationId, updates);
 
                 const summaryParts: string[] = [];
                 if (changes.assignee) summaryParts.push(`assigned to ${changes.assignee}`);
@@ -622,8 +660,10 @@ export const ProjectController = {
 
     removeMember: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId, userId } = req.params;
-            await ProjectRepository.removeMember(projectId, userId);
+            const removed = await ProjectRepository.removeMember(projectId, userId, orgId);
+            if (!removed) return sendError(res, 404, 'Member not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to remove team member', error);
@@ -636,7 +676,7 @@ export const ProjectController = {
             const orgId = (req as any).orgId;
 
             const data = await prisma.project.findMany({
-                where: { organizationId: orgId, status: 'Archived' },
+                where: { organizationId: orgId, status: ARCHIVED_PROJECT_STATUS },
                 orderBy: { updatedAt: 'desc' },
                 include: {
                     projectLead: { select: { id: true, fullName: true, email: true } },
@@ -655,7 +695,7 @@ export const ProjectController = {
             const existing = await ProjectRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Project not found');
 
-            await ProjectRepository.update(req.params.id, { status: 'Archived' }, orgId);
+            await ProjectRepository.update(req.params.id, { status: ARCHIVED_PROJECT_STATUS }, orgId);
             res.sendStatus(204);
             await logAudit(req, { action: 'ARCHIVE', entityType: 'Project', entityId: existing.id, entityName: existing.name });
         } catch (error) {
@@ -669,7 +709,7 @@ export const ProjectController = {
             const existing = await ProjectRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Project not found');
 
-            await ProjectRepository.update(req.params.id, { status: 'Not Started' }, orgId);
+            await ProjectRepository.update(req.params.id, { status: DEFAULT_PROJECT_STATUS }, orgId);
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to restore project', error);
@@ -867,9 +907,10 @@ export const ProjectController = {
 
     githubMetrics: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const metrics = await prisma.gitMetric.findMany({
-                where: { projectId },
+                where: { projectId, organizationId: orgId },
                 include: { projectRepo: { select: { id: true, label: true, githubOwner: true, repositoryName: true } } },
                 orderBy: { updatedAt: 'desc' },
             });
@@ -881,11 +922,12 @@ export const ProjectController = {
 
     githubCommits: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { projectId } = req.params;
             const branch = req.query.branch as string | undefined;
             const repoId = req.query.repoId as string | undefined;
 
-            const where: Record<string, unknown> = { projectId };
+            const where: Record<string, unknown> = { projectId, organizationId: orgId };
             if (branch) where.branchName = branch;
             if (repoId) where.projectRepoId = repoId;
 
@@ -916,6 +958,9 @@ export const ProjectController = {
 
             if (!trimmed && images.length === 0) return sendError(res, 400, 'Comment content or at least one image is required');
 
+            const task = await prisma.projectTask.findFirst({ where: { id: taskId, organizationId: orgId } });
+            if (!task) return sendError(res, 404, 'Task not found');
+
             const comment = await prisma.taskComment.create({
                 data: {
                     projectTaskId: taskId,
@@ -937,8 +982,12 @@ export const ProjectController = {
 
     deleteTaskComment: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId;
             const { commentId } = req.params;
-            await prisma.taskComment.delete({ where: { id: commentId } });
+            const { count } = await prisma.taskComment.deleteMany({
+                where: { id: commentId, organizationId: orgId },
+            });
+            if (count === 0) return sendError(res, 404, 'Comment not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete comment', error);

@@ -35,7 +35,11 @@ const leadIncludes = {
     project: { select: { id: true, name: true } },
     assignee: userRefSelect,
     creator: userRefSelect,
-    pipeline: true,
+    // Con sus etapas: `Lead.stage` guarda un slug, así que sin el catálogo de
+    // etapas del pipeline el cliente no puede mostrar ni el nombre visible ni
+    // decidir el color por `category`. Antes era `pipeline: true` y la UI
+    // reconstruía la etiqueta partiendo el propio valor por "_".
+    pipeline: { include: { stages: { orderBy: { order: 'asc' as const } } } },
     events: {
         orderBy: { createdAt: 'desc' as const },
         include: { creator: userRefSelect },
@@ -43,6 +47,31 @@ const leadIncludes = {
 };
 
 export const LeadRepository = {
+    /**
+     * La etapa se busca **dentro del pipeline del lead**, nunca globalmente:
+     * dos organizaciones pueden tener ambas un slug 'nuevo' y son etapas
+     * distintas. Devuelve null si no pertenece a ese pipeline.
+     */
+    findStageBySlug: (pipelineId: string, slug: string) =>
+        prisma.pipelineStage.findFirst({
+            where: { pipelineId, slug },
+            select: { id: true, slug: true, name: true, category: true },
+        }),
+
+    findDefaultPipeline: (organizationId: string) =>
+        prisma.pipeline.findFirst({
+            where: { organizationId, isDefault: true },
+            select: { id: true, stages: { select: { slug: true, order: true }, orderBy: { order: 'asc' } } },
+        }),
+
+    /** La etapa inicial de un pipeline: la de menor `order`. */
+    findFirstStage: (pipelineId: string) =>
+        prisma.pipelineStage.findFirst({
+            where: { pipelineId },
+            orderBy: { order: 'asc' },
+            select: { slug: true },
+        }),
+
     findAll: (orgId: string, skip: number, take: number, filters?: LeadFilters) => {
         const where = buildWhere(orgId, filters);
         return prisma.lead.findMany({

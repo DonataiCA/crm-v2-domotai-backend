@@ -3,6 +3,7 @@ import { sendError } from '../utils/error';
 import { prisma } from '../config/prisma';
 import { emailService } from '../utils/email';
 import { isTeamRole } from '../constants/roles';
+import { DEFAULT_PROJECT_STATUS } from '../constants/enums';
 
 export const DashboardController = {
     commercial: async (req: Request, res: Response) => {
@@ -48,10 +49,14 @@ export const DashboardController = {
                 },
             });
 
-            const stageMap = new Map(activePipeline.stages.map(s => [s.name, s]));
+            // El cruce va SIEMPRE por slug: desde add_catalog_checks la columna
+            // leads.stage está restringida a `^[a-z0-9_]+$`, así que nunca
+            // contiene el nombre legible. `name` se sigue devolviendo tal cual
+            // para que la interfaz muestre "Negociación" y no "negociacion".
+            const stageMap = new Map(activePipeline.stages.map(s => [s.slug, s]));
 
             const stageStats = activePipeline.stages.map(stage => {
-                const stageLeads = leads.filter(l => l.stage === stage.name);
+                const stageLeads = leads.filter(l => l.stage === stage.slug);
                 const companiesSet = new Map<string, string>();
                 stageLeads.forEach(l => {
                     if (l.company) companiesSet.set(l.company.id, l.company.name);
@@ -131,12 +136,14 @@ export const DashboardController = {
 
             const projectsByStatus: Record<string, number> = {};
             projects.forEach(p => {
-                const status = p.status || 'Not Started';
+                const status = p.status || DEFAULT_PROJECT_STATUS;
                 projectsByStatus[status] = (projectsByStatus[status] || 0) + 1;
             });
 
+            // El `|| 'active'` que había aquí existía porque la base tenía dos
+            // grafías del mismo estado. Con un solo vocabulario sobra.
             const activeProjectIds = projects
-                .filter(p => p.status === 'In Progress' || p.status === 'active')
+                .filter(p => p.status === 'IN_PROGRESS')
                 .map(p => p.id);
 
             const taskStats = activeProjectIds.length > 0

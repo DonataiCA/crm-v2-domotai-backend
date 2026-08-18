@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { sendError } from '../utils/error';
 import { prisma } from '../config/prisma';
+import { ARCHIVED_PROJECT_STATUS } from '../constants/enums';
 import OpenAI from 'openai';
 
 // Igual que en utils/ai.ts: openai v7 lanza si falta la API key al construir,
@@ -68,7 +69,7 @@ export const AiAgentController = {
                     },
                 }),
                 prisma.project.findMany({
-                    where: { organizationId, status: { not: 'ARCHIVED' } },
+                    where: { organizationId, status: { not: ARCHIVED_PROJECT_STATUS } },
                     orderBy: { updatedAt: 'desc' },
                     take: 30,
                     select: {
