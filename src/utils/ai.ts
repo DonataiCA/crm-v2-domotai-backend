@@ -171,6 +171,26 @@ export async function parseTasksFromChat(
         }));
 }
 
+/** Lo que se manda cuando el usuario arrastra un archivo y no escribe nada. */
+const DOCUMENT_FALLBACK_INSTRUCTION = 'Crea las tareas que describe el documento adjunto.';
+
+/**
+ * Reglas que sólo aplican cuando viene un documento adjunto.
+ *
+ * Sin ellas el modelo trata el documento entero como una única petición y devuelve una
+ * sola tarea titulada con el nombre del archivo. Las dos prohibiciones del medio —nada de
+ * "update", y un tope de 20— evitan que un drop reescriba tareas que ya estaban bien o
+ * llene el tablero de microtareas.
+ */
+const DOCUMENT_SYSTEM_RULES = `DOCUMENTO ADJUNTO:
+- El usuario ha adjuntado un documento delimitado por "--- DOCUMENTO ADJUNTO ---". Las tareas salen de SU CONTENIDO.
+- Del documento sólo salen acciones "create". NUNCA emitas "update" a partir de su contenido: un documento describe trabajo por hacer, no cambios sobre tareas que ya existen.
+- El texto que el usuario escribe fuera de los delimitadores son INSTRUCCIONES sobre cómo interpretarlo (qué parte usar, a quién asignar, en qué fase), no una tarea.
+- NO crees una tarea cuyo título sea el nombre del archivo, ni una tarea del tipo "procesar el documento".
+- Un encabezado no es automáticamente una tarea: agrupa lo que sea una unidad de trabajo real y descarta contexto, justificaciones y notas.
+- Máximo 20 tareas. Si el documento da para más, agrupa las relacionadas en tareas de mayor alcance en vez de emitir microtareas.
+- Si el documento no describe trabajo accionable, devuelve un array vacío.`;
+
 /**
  * Parse a natural language message into one or more actions:
  * - create: build a brand-new task
@@ -185,6 +205,7 @@ export async function parseChatActions(
     members: Array<{ id: string; name: string }>,
     existingTasks: ExistingTaskRef[],
     projectName: string,
+    document?: { fileName: string; content: string },
 ): Promise<ChatAction[]> {
     const phasesStr = phases.map((p) => `"${p.name}" (ID: ${p.id})`).join(', ');
     const membersStr = members.map((m) => `"${m.name}" (ID: ${m.id})`).join(', ');
@@ -220,6 +241,24 @@ export async function parseChatActions(
         `+2 meses = ${addDays(60)}`,
         `+3 meses = ${addDays(90)}`,
     ].join(' | ');
+
+    // El documento adjunto va delimitado y precedido por la instrucción del usuario.
+    // Sin los delimitadores, un .md que empiece por "# Crear el módulo de facturación"
+    // es indistinguible de una instrucción escrita a mano.
+    const userContent = document
+        ? [
+            message?.trim() || DOCUMENT_FALLBACK_INSTRUCTION,
+            '',
+            `--- DOCUMENTO ADJUNTO: ${document.fileName} ---`,
+            document.content,
+            '--- FIN DEL DOCUMENTO ---',
+        ].join('\n')
+        : message;
+
+    // Bloque condicional. Los saltos de línea van dentro del valor, no en la plantilla:
+    // así, sin documento, la interpolación es la cadena vacía y el prompt de sistema
+    // queda byte a byte igual que antes de existir esta funcionalidad.
+    const documentRules = document ? `\n\n${DOCUMENT_SYSTEM_RULES}` : '';
 
     const response = await getOpenAI().chat.completions.create({
         // gpt-4o is noticeably better at multi-step counting/arithmetic which matters
@@ -287,7 +326,7 @@ Referencias de fechas (úsalas siempre que sea posible para evitar errores de c�
 ${dateRefs}
 
 Tareas existentes en este proyecto:
-${tasksStr}
+${tasksStr}${documentRules}
 
 Para CREATE incluye: title, description, priority (LOW|MEDIUM|HIGH|URGENT, default MEDIUM), phaseId (o null), phaseName (o null), assigneeName (o null), dueDate (ISO YYYY-MM-DD o null).
 
@@ -303,7 +342,7 @@ Responde SOLO con JSON:
             },
             {
                 role: 'user',
-                content: message,
+                content: userContent,
             },
         ],
     });
