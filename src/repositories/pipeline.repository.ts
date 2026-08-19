@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { slugifyStage } from '../constants/enums';
 
 export const PipelineRepository = {
     findAll: (orgId: string) =>
@@ -65,10 +66,31 @@ export const PipelineRepository = {
     deleteStage: (stageId: string) =>
         prisma.pipelineStage.delete({ where: { id: stageId } }),
 
-    countLeadsByStage: async (stageName: string, pipelineId: string) => {
-        return prisma.lead.count({
-            where: { pipelineId, stage: stageName },
+    /**
+     * Cuántos leads sigue reclamando esta etapa. Es el guardián que impide
+     * borrarla y dejar esos leads sin columna que los recoja.
+     *
+     * El cruce va por slug normalizado, no por nombre: `Lead.stage` guarda el
+     * slug, así que comparar contra `stage.name` devolvía 0 para cualquier
+     * etapa con mayúscula o acento y el guardián no guardaba nada. Se agrupa en
+     * base y se empareja aquí porque `slugifyStage` no se puede expresar en la
+     * consulta, y el número de valores distintos por pipeline es un puñado.
+     */
+    countLeadsByStage: async (stage: { slug: string; name: string }, pipelineId: string) => {
+        const groups = await prisma.lead.groupBy({
+            by: ['stage'],
+            // Un lead en la papelera no debe impedir borrar la etapa.
+            where: { pipelineId, deletedAt: null },
+            _count: { _all: true },
         });
+
+        const keys = new Set(
+            [stage.slug, stage.name].map(slugifyStage).filter(Boolean),
+        );
+
+        return groups
+            .filter((g) => g.stage != null && keys.has(slugifyStage(g.stage)))
+            .reduce((total, g) => total + g._count._all, 0);
     },
 
     reorderStages: async (pipelineId: string, stageIds: string[]) => {

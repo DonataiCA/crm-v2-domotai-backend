@@ -126,7 +126,7 @@ export const PipelineController = {
             const pipeline = await PipelineRepository.findById(stage.pipelineId, orgId);
             if (!pipeline) return sendError(res, 404, 'Pipeline not found');
 
-            const count = await PipelineRepository.countLeadsByStage(stage.name, stage.pipelineId);
+            const count = await PipelineRepository.countLeadsByStage(stage, stage.pipelineId);
             if (count > 0) {
                 return sendError(res, 409, `Cannot delete stage: it has ${count} lead(s). Reassign them first.`);
             }
