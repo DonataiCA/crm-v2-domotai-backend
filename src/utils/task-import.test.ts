@@ -100,11 +100,12 @@ describe('resolveTemplateTasks — resolución del Área', () => {
         expect(result.tasks[0].phaseId).toBe('phase-backend');
     });
 
-    it('reporta un área que no existe en el proyecto, sin caer en la primera fase', () => {
+    it('avisa de un área que no existe y coloca la tarea en la primera fase', () => {
         const result = resolveTemplateTasks([task({ phaseName: 'Marketing' })], context());
 
-        expect(result.tasks).toEqual([]);
-        expect(result.issues).toEqual([
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].phaseId).toBe('phase-backend');
+        expect(result.warnings).toEqual([
             {
                 line: 10,
                 taskTitle: 'Una tarea',
@@ -140,11 +141,12 @@ describe('resolveTemplateTasks — resolución del Responsable', () => {
         expect(result.tasks[0].assignedTo).toBe('profile-ana');
     });
 
-    it('reporta a alguien que no es miembro, sin dejar la tarea sin asignar', () => {
+    it('avisa de alguien que no es miembro y deja la tarea sin asignar', () => {
         const result = resolveTemplateTasks([task({ assigneeName: 'Ana' })], context());
 
-        expect(result.tasks).toEqual([]);
-        expect(result.issues).toEqual([
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].assignedTo).toBeNull();
+        expect(result.warnings).toEqual([
             {
                 line: 10,
                 taskTitle: 'Una tarea',
@@ -160,7 +162,9 @@ describe('resolveTemplateTasks — resolución del Responsable', () => {
             context(),
         );
 
-        expect(result.issues[0].message).toBe(IMPORT_MESSAGES.unknownAssignee('David'));
+        // Lo que importa sigue siendo que NO se le asigne a David Altuve por parecido.
+        expect(result.tasks[0].assignedTo).toBeNull();
+        expect(result.warnings[0].message).toBe(IMPORT_MESSAGES.unknownAssignee('David'));
     });
 });
 
@@ -215,21 +219,23 @@ describe('resolveTemplateTasks — orderIndex', () => {
     });
 
     it('no consume un hueco de orden para una tarea que no se llega a crear', () => {
+        // Un título duplicado sí detiene esa tarea: no debe gastar su hueco.
         const result = resolveTemplateTasks(
             [
                 task({ title: 'A' }),
-                task({ title: 'B', assigneeName: 'Nadie' }),
+                task({ title: 'B' }),
                 task({ title: 'C' }),
             ],
-            context(),
+            context({ existingTitles: ['B'] }),
         );
 
         expect(result.tasks.map(t => t.orderIndex)).toEqual([0, 1]);
+        expect(result.tasks.map(t => t.title)).toEqual(['A', 'C']);
     });
 });
 
 describe('resolveTemplateTasks — acumulación de problemas', () => {
-    it('reporta todos los problemas de una vez, no sólo el primero', () => {
+    it('acumula los avisos de todas las tareas, no sólo el de la primera', () => {
         const result = resolveTemplateTasks(
             [
                 task({ title: 'A', phaseName: 'Marketing', line: 3 }),
@@ -239,7 +245,80 @@ describe('resolveTemplateTasks — acumulación de problemas', () => {
             context(),
         );
 
+        expect(result.warnings.map(i => i.line)).toEqual([3, 9]);
+        expect(result.tasks.map(t => t.title)).toEqual(['A', 'B', 'C']);
+    });
+
+    it('acumula los errores de todas las tareas cuando los hay', () => {
+        const result = resolveTemplateTasks(
+            [
+                task({ title: 'A', line: 3 }),
+                task({ title: 'B', line: 9 }),
+            ],
+            context({ existingTitles: ['A', 'B'] }),
+        );
+
         expect(result.issues.map(i => i.line)).toEqual([3, 9]);
-        expect(result.tasks.map(t => t.title)).toEqual(['C']);
+        expect(result.tasks).toEqual([]);
+    });
+});
+
+describe('resolveTemplateTasks — área y responsable desconocidos no bloquean', () => {
+    /**
+     * Un archivo escrito por otra IA acierta el formato pero no puede acertar los nombres
+     * propios de este proyecto. Rechazar el archivo entero por eso obligaba a un ciclo de
+     * corrección a mano que es justo lo que la importación venía a evitar. Ahora la tarea
+     * se crea colocada donde se pueda y el ajuste se avisa, que es reversible desde el
+     * tablero en dos clics.
+     */
+    it('coloca en la primera fase una tarea cuya área no existe, y lo avisa', () => {
+        const result = resolveTemplateTasks([task({ phaseName: 'Área Inventada' })], context());
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks).toHaveLength(1);
+        expect(result.tasks[0].phaseId).toBe('phase-backend');
+        expect(result.warnings).toContainEqual({
+            line: 10,
+            taskTitle: 'Una tarea',
+            message: IMPORT_MESSAGES.unknownPhase('Área Inventada', ['Backend Development', 'Testing & QA']),
+        });
+    });
+
+    it('deja sin asignar a un responsable que no es miembro, y lo avisa', () => {
+        const result = resolveTemplateTasks([task({ assigneeName: 'Fulano de Tal' })], context());
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].assignedTo).toBeNull();
+        expect(result.warnings).toContainEqual({
+            line: 10,
+            taskTitle: 'Una tarea',
+            message: IMPORT_MESSAGES.unknownAssignee('Fulano de Tal'),
+        });
+    });
+
+    it('no avisa de nada cuando todo se resuelve', () => {
+        const result = resolveTemplateTasks([task({ assigneeName: 'Ana Pérez' })], context());
+
+        expect(result.warnings).toEqual([]);
+        expect(result.tasks[0].assignedTo).toBe('profile-ana');
+    });
+
+    /** Sin fases no hay dónde colocar la tarea: eso sigue siendo un error, no un aviso. */
+    it('sigue rechazando el archivo si el proyecto no tiene ninguna área', () => {
+        const result = resolveTemplateTasks([task()], context({ phases: [] }));
+
+        expect(result.tasks).toEqual([]);
+        expect(result.issues[0].message).toBe(IMPORT_MESSAGES.noPhases);
+    });
+
+    /** Un título repetido crearía un duplicado silencioso: sigue bloqueando. */
+    it('sigue rechazando una tarea cuyo título ya existe en el proyecto', () => {
+        const result = resolveTemplateTasks(
+            [task()],
+            context({ existingTitles: ['Una tarea'] }),
+        );
+
+        expect(result.tasks).toEqual([]);
+        expect(result.issues[0].message).toBe(IMPORT_MESSAGES.existingTitle('Una tarea'));
     });
 });

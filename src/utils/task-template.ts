@@ -130,6 +130,45 @@ const FIELD_LABELS: Record<FieldKey, string> = {
  * lenguas porque la interfaz del CRM mezcla ambas y obligar a una sola sólo produciría
  * archivos rechazados por una tilde.
  */
+/**
+ * Traducciones que sólo valen aquí. A una IA se le pide la plantilla en español y
+ * responde en español, así que la traducción es de la plantilla, no del CRM: el catálogo
+ * de `constants/enums.ts` sigue hablando un único idioma y la API no cambia de contrato.
+ * Lo que no esté en estas tablas cae en `normalizeTaskStatus`/`normalizeTaskPriority`,
+ * que ya toleran las grafías del inglés.
+ */
+const SPANISH_STATUS: Record<string, TaskStatus> = {
+    'pendiente': 'TODO',
+    'por hacer': 'TODO',
+    'sin empezar': 'TODO',
+    'en progreso': 'IN_PROGRESS',
+    'en curso': 'IN_PROGRESS',
+    'en proceso': 'IN_PROGRESS',
+    'haciendose': 'IN_PROGRESS',
+    'en pausa': 'ON_HOLD',
+    'pausada': 'ON_HOLD',
+    'bloqueada': 'ON_HOLD',
+    'detenida': 'ON_HOLD',
+    'completada': 'COMPLETED',
+    'completado': 'COMPLETED',
+    'terminada': 'COMPLETED',
+    'terminado': 'COMPLETED',
+    'finalizada': 'COMPLETED',
+    'hecha': 'COMPLETED',
+    'hecho': 'COMPLETED',
+    'lista': 'COMPLETED',
+};
+
+const SPANISH_PRIORITY: Record<string, TaskPriority> = {
+    'baja': 'LOW',
+    'media': 'MEDIUM',
+    'normal': 'MEDIUM',
+    'alta': 'HIGH',
+    'urgente': 'URGENT',
+    'critica': 'URGENT',
+    'muy alta': 'URGENT',
+};
+
 const FIELD_ALIASES: Record<string, FieldKey> = {
     'area': 'phaseName',
     'area de trabajo': 'phaseName',
@@ -265,8 +304,58 @@ interface RawBlock {
     issues: TemplateIssue[];
 }
 
-/** Corta el archivo en bloques `## ` y clasifica cada línea, sin validar todavía nada. */
-function splitBlocks(lines: string[]): { blocks: RawBlock[]; issues: TemplateIssue[] } {
+/**
+ * La plantilla usa `## `, pero una IA a la que se le pide "una sección por tarea" devuelve
+ * tan pronto `#` como `###`. El nivel no cambia el significado, así que se deduce en vez
+ * de imponerlo: manda el nivel cuyos encabezados llevan campos debajo, que es lo que
+ * distingue una tarea de un título de documento o de un separador de sección.
+ *
+ * Devuelve 2 —el de la plantilla— cuando no hay ningún encabezado con campos: así el
+ * archivo se rechaza con "no contiene ninguna tarea", que es el mensaje correcto.
+ */
+function detectTaskLevel(lines: string[]): number {
+    const withFields = new Map<number, number>();
+    let level: number | null = null;
+    let inFence = false;
+
+    for (const raw of lines) {
+        const trimmed = raw.trim();
+        if (/^```/.test(trimmed)) {
+            inFence = !inFence;
+            continue;
+        }
+        if (inFence) continue;
+
+        const indent = raw.length - raw.trimStart().length;
+        if (indent >= 2 && trimmed) continue;
+
+        const heading = /^(#{1,6})(?!#)\s*\S/.exec(trimmed);
+        if (heading) {
+            level = heading[1].length;
+            continue;
+        }
+        if (level !== null && /^[-*+]\s+/.test(trimmed) && parseFieldLine(trimmed.replace(/^[-*+]\s+/, ''))) {
+            withFields.set(level, (withFields.get(level) ?? 0) + 1);
+            level = null;
+        }
+    }
+
+    let best = 2;
+    let bestCount = 0;
+    for (const [candidate, count] of withFields) {
+        if (count > bestCount || (count === bestCount && candidate < best)) {
+            best = candidate;
+            bestCount = count;
+        }
+    }
+    return bestCount === 0 ? 2 : best;
+}
+
+/** Corta el archivo en bloques de tarea y clasifica cada línea, sin validar todavía nada. */
+function splitBlocks(
+    lines: string[],
+    taskLevel: number,
+): { blocks: RawBlock[]; issues: TemplateIssue[] } {
     const blocks: RawBlock[] = [];
     const issues: TemplateIssue[] = [];
     let block: RawBlock | null = null;
@@ -309,10 +398,10 @@ function splitBlocks(lines: string[]): { blocks: RawBlock[]; issues: TemplateIss
             return;
         }
 
-        const heading = /^#{1,6}(?!#)\s*(.*)$/.exec(trimmed);
-        if (heading && /^##(?!#)/.test(trimmed)) {
+        const heading = /^(#{1,6})(?!#)\s*(.*)$/.exec(trimmed);
+        if (heading && heading[1].length === taskLevel) {
             block = {
-                title: heading[1].replace(/\s*#+\s*$/, '').trim(),
+                title: heading[2].replace(/\s*#+\s*$/, '').trim(),
                 line,
                 fields: [],
                 issues: [],
@@ -414,14 +503,16 @@ function buildTask(block: RawBlock): { task: ParsedTemplateTask | null; issues: 
 
     let status: TaskStatus = DEFAULT_TASK_STATUS;
     if (values.status !== undefined) {
-        const normalized = normalizeTaskStatus(values.status);
+        const normalized =
+            SPANISH_STATUS[normalizeForMatch(values.status)] ?? normalizeTaskStatus(values.status);
         if (normalized) status = normalized;
         else issues.push(at(lineOf('status'), TEMPLATE_MESSAGES.invalidStatus(values.status)));
     }
 
     let priority: TaskPriority = DEFAULT_TASK_PRIORITY;
     if (values.priority !== undefined) {
-        const normalized = normalizeTaskPriority(values.priority);
+        const normalized =
+            SPANISH_PRIORITY[normalizeForMatch(values.priority)] ?? normalizeTaskPriority(values.priority);
         if (normalized) priority = normalized;
         else issues.push(at(lineOf('priority'), TEMPLATE_MESSAGES.invalidPriority(values.priority)));
     }
@@ -478,8 +569,39 @@ function buildTask(block: RawBlock): { task: ParsedTemplateTask | null; issues: 
     };
 }
 
-export function parseTaskTemplate(raw: string): TemplateParseResult {
-    const lines = raw.split(/\r?\n/);
+/**
+ * Casi todas las IAs entregan el markdown dentro de una valla de código para poder
+ * mostrarlo, y al copiarlo el archivo entero queda envuelto. Sin esto el parser no ve
+ * ni un encabezado y responde "no contiene ninguna tarea", que desconcierta porque las
+ * tareas están a la vista.
+ *
+ * Las dos líneas de la valla se **vacían**, no se eliminan: así los números de línea que
+ * se reportan siguen siendo los del archivo que tiene el usuario delante.
+ *
+ * Sólo se desenvuelve si la valla abarca todo el documento y lo que queda dentro tiene
+ * las vallas emparejadas, para no tocar los bloques de código de una descripción.
+ */
+function unwrapOuterFence(lines: string[]): string[] {
+    const first = lines.findIndex((line) => line.trim() !== '');
+    if (first === -1) return lines;
+
+    let last = lines.length - 1;
+    while (last > first && lines[last].trim() === '') last--;
+
+    if (!/^```/.test(lines[first].trim()) || lines[last].trim() !== '```') return lines;
+
+    const inner = lines.slice(first + 1, last);
+    const fences = inner.filter((line) => /^\s*```/.test(line)).length;
+    if (fences % 2 !== 0) return lines;
+
+    const unwrapped = [...lines];
+    unwrapped[first] = '';
+    unwrapped[last] = '';
+    return unwrapped;
+}
+
+export function parseTaskTemplate(rawInput: string): TemplateParseResult {
+    const lines = unwrapOuterFence(rawInput.split(/\r?\n/));
 
     // La versión se busca sobre el texto original: después de vaciar los comentarios ya
     // no está.
@@ -496,7 +618,11 @@ export function parseTaskTemplate(raw: string): TemplateParseResult {
         }
     }
 
-    const { blocks, issues: structuralIssues } = splitBlocks(stripHtmlComments(lines));
+    const sinComentarios = stripHtmlComments(lines);
+    const { blocks, issues: structuralIssues } = splitBlocks(
+        sinComentarios,
+        detectTaskLevel(sinComentarios),
+    );
 
     if (blocks.length === 0) {
         return { tasks: [], issues: [{ line: 1, message: TEMPLATE_MESSAGES.noTasks }] };

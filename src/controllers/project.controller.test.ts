@@ -321,6 +321,7 @@ describe('ProjectController.importTasks', () => {
             },
         ]);
         expect(res.json).toHaveBeenCalledWith({
+            warnings: [],
             created: 1,
             tasks: [{ id: 'task-1' }],
             issues: [],
@@ -341,7 +342,10 @@ describe('ProjectController.importTasks', () => {
 
     it('responde 422 y no crea nada cuando una sola tarea no se puede resolver', async () => {
         findById.mockResolvedValue({ id: 'proj-1' });
-        getImportContext.mockResolvedValue({ ...IMPORT_CONTEXT, members: [] });
+        // Un proyecto sin fases: no hay dónde colocar nada, así que sigue bloqueando.
+        // Un responsable desconocido ya NO sirve de ejemplo: desde que la importación
+        // tolera los nombres propios ajenos, eso es un aviso y la tarea se crea.
+        getImportContext.mockResolvedValue({ ...IMPORT_CONTEXT, phases: [] });
 
         const res = fakeRes();
         await ProjectController.importTasks(importReq(TEMPLATE), res);
@@ -349,6 +353,21 @@ describe('ProjectController.importTasks', () => {
         expect(createTasks).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(422);
         expect(res.json.mock.calls[0][0]).toMatchObject({ created: 0, tasks: [] });
+    });
+
+    it('crea las tareas y devuelve avisos cuando el responsable no es miembro', async () => {
+        findById.mockResolvedValue({ id: 'proj-1' });
+        getImportContext.mockResolvedValue({ ...IMPORT_CONTEXT, members: [] });
+        createTasks.mockResolvedValue([{ id: 'task-1' }]);
+
+        const res = fakeRes();
+        await ProjectController.importTasks(importReq(TEMPLATE), res);
+
+        expect(createTasks).toHaveBeenCalled();
+        expect(res.status).not.toHaveBeenCalledWith(422);
+        const body = res.json.mock.calls[0][0];
+        expect(body.created).toBe(1);
+        expect(body.warnings.length).toBeGreaterThan(0);
     });
 
     it('responde 500 sin filtrar el error cuando la transacción falla', async () => {

@@ -486,13 +486,15 @@ export const ProjectController = {
 
             const parsed = parseTaskTemplate(document.content);
             if (parsed.issues.length > 0) {
-                return res.status(422).json({ created: 0, tasks: [], issues: parsed.issues });
+                return res.status(422).json({ created: 0, tasks: [], issues: parsed.issues, warnings: [] });
             }
 
             const context = await ProjectRepository.getImportContext(projectId, organizationId);
             const resolved = resolveTemplateTasks(parsed.tasks, context);
             if (resolved.issues.length > 0) {
-                return res.status(422).json({ created: 0, tasks: [], issues: resolved.issues });
+                return res
+                    .status(422)
+                    .json({ created: 0, tasks: [], issues: resolved.issues, warnings: resolved.warnings });
             }
 
             const tasks = await ProjectRepository.createTasks(
@@ -504,7 +506,9 @@ export const ProjectController = {
                 })),
             );
 
-            res.json({ created: tasks.length, tasks, issues: [] });
+            // Los avisos viajan con un 200: las tareas se crearon, sólo hay que contar
+            // cómo se colocaron las que traían un área o un responsable desconocidos.
+            res.json({ created: tasks.length, tasks, issues: [], warnings: resolved.warnings });
         } catch (error) {
             return sendError(res, 500, 'Failed to import tasks', error);
         }

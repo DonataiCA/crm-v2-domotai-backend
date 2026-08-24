@@ -364,13 +364,21 @@ describe('parseTaskTemplate — catálogos', () => {
     });
 
     it('reporta un estado fuera del catálogo', () => {
-        const result = parseTaskTemplate(task('- **Estado:** HECHO'));
+        // "HECHO" ya no vale como ejemplo de inválido: desde que la plantilla acepta
+        // español es un alias de COMPLETED. Hace falta algo que no signifique nada.
+        const result = parseTaskTemplate(task('- **Estado:** a medias'));
         expect(result.tasks).toEqual([]);
         expect(result.issues).toContainEqual({
             line: 4,
             taskTitle: 'Una tarea',
-            message: TEMPLATE_MESSAGES.invalidStatus('HECHO'),
+            message: TEMPLATE_MESSAGES.invalidStatus('a medias'),
         });
+    });
+
+    it('acepta HECHO como el COMPLETED que quiere decir', () => {
+        const result = parseTaskTemplate(task('- **Estado:** HECHO'));
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].status).toBe('COMPLETED');
     });
 
     it.each(['LOW', 'MEDIUM', 'HIGH', 'URGENT'])('acepta la prioridad %s', (priority) => {
@@ -380,13 +388,19 @@ describe('parseTaskTemplate — catálogos', () => {
     });
 
     it('reporta una prioridad fuera del catálogo', () => {
-        const result = parseTaskTemplate(task('- **Prioridad:** ALTA'));
+        const result = parseTaskTemplate(task('- **Prioridad:** cuando se pueda'));
         expect(result.tasks).toEqual([]);
         expect(result.issues).toContainEqual({
             line: 4,
             taskTitle: 'Una tarea',
-            message: TEMPLATE_MESSAGES.invalidPriority('ALTA'),
+            message: TEMPLATE_MESSAGES.invalidPriority('cuando se pueda'),
         });
+    });
+
+    it('acepta ALTA como el HIGH que quiere decir', () => {
+        const result = parseTaskTemplate(task('- **Prioridad:** ALTA'));
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].priority).toBe('HIGH');
     });
 });
 
@@ -510,5 +524,154 @@ describe.skipIf(!templatePresent)('la plantilla que se publica en el frontend', 
 
         expect(titles).not.toContain('Tareas');
         expect(titles.every(t => !t.includes('OBLIGATORIO'))).toBe(true);
+    });
+});
+
+describe('parseTaskTemplate — tolerancia con lo que devuelve otra IA', () => {
+    /**
+     * Casi todas las IAs entregan el markdown dentro de una valla de código para
+     * poder mostrarlo. Copiado tal cual, el archivo entero quedaba "dentro" de la
+     * valla y el parser no veía ni un encabezado: fallaba con "no contiene ninguna
+     * tarea", que es el error más desconcertante posible porque las tareas están
+     * a la vista.
+     */
+    it('desenvuelve el documento cuando toda la plantilla viene en una valla de código', () => {
+        const envuelto = ['```markdown', FULL_TEMPLATE, '```'].join('\n');
+
+        const result = parseTaskTemplate(envuelto);
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks.map((t) => t.title)).toEqual([
+            'Configurar el pipeline de CI',
+            'Endpoint de login con JWT',
+        ]);
+    });
+
+    it('desenvuelve también una valla sin lenguaje declarado', () => {
+        const envuelto = ['```', FULL_TEMPLATE, '```'].join('\n');
+
+        expect(parseTaskTemplate(envuelto).tasks).toHaveLength(2);
+    });
+
+    it('no toca las vallas que van dentro de una descripción', () => {
+        const conCodigo = [
+            '## Documentar el arranque',
+            '',
+            '- **Área:** DevOps',
+            '- **Descripción:** Ejecutar:',
+            '',
+            '  ```bash',
+            '  npm run dev',
+            '  ```',
+        ].join('\n');
+
+        const result = parseTaskTemplate(conCodigo);
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].description).toContain('npm run dev');
+    });
+});
+
+describe('parseTaskTemplate — nivel del encabezado de tarea', () => {
+    /**
+     * La plantilla usa "## ", pero una IA a la que se le pide "una sección por tarea"
+     * devuelve tan pronto "#" como "###". El nivel exacto no cambia el significado, así
+     * que se deduce: manda el nivel cuyos encabezados llevan campos debajo.
+     */
+    it('detecta las tareas cuando la IA usó ###', () => {
+        const md = [
+            '# Tareas del sprint',
+            '',
+            '### Migrar el schema',
+            '',
+            '- **Área:** Backend',
+            '',
+            '### Publicar la release',
+            '',
+            '- **Área:** DevOps',
+        ].join('\n');
+
+        const result = parseTaskTemplate(md);
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks.map((t) => t.title)).toEqual(['Migrar el schema', 'Publicar la release']);
+    });
+
+    it('detecta las tareas cuando cada una es un "#"', () => {
+        const md = [
+            '# Migrar el schema',
+            '',
+            '- **Área:** Backend',
+            '',
+            '# Publicar la release',
+            '',
+            '- **Área:** DevOps',
+        ].join('\n');
+
+        expect(parseTaskTemplate(md).tasks).toHaveLength(2);
+    });
+
+    /** El "# Tareas" de la plantilla no es una tarea: no lleva campos debajo. */
+    it('ignora el título del documento y se queda con el nivel que tiene campos', () => {
+        const result = parseTaskTemplate(FULL_TEMPLATE);
+
+        expect(result.tasks.map((t) => t.title)).toEqual([
+            'Configurar el pipeline de CI',
+            'Endpoint de login con JWT',
+        ]);
+    });
+
+    it('sigue rechazando un archivo sin ningún encabezado con campos', () => {
+        const md = ['# Notas sueltas', '', 'Esto no es una plantilla.'].join('\n');
+
+        const result = parseTaskTemplate(md);
+
+        expect(result.tasks).toEqual([]);
+        expect(result.issues.some((i) => i.message === TEMPLATE_MESSAGES.noTasks)).toBe(true);
+    });
+});
+
+describe('parseTaskTemplate — estado y prioridad en español', () => {
+    /**
+     * Se le pide a una IA en español que rellene "Estado" y "Prioridad" y responde en
+     * español. Rechazarlo obligaba a traducir a mano un vocabulario que el CRM ya sabe
+     * mostrar traducido.
+     */
+    const conCampo = (campo: string, valor: string) =>
+        parseTaskTemplate(['## T', '', '- **Área:** A', `- **${campo}:** ${valor}`].join('\n'));
+
+    it.each([
+        ['Pendiente', 'TODO'],
+        ['En progreso', 'IN_PROGRESS'],
+        ['En curso', 'IN_PROGRESS'],
+        ['En pausa', 'ON_HOLD'],
+        ['Completada', 'COMPLETED'],
+        ['Terminada', 'COMPLETED'],
+        ['Hecha', 'COMPLETED'],
+    ])('traduce el estado "%s" a %s', (entrada, esperado) => {
+        const result = conCampo('Estado', entrada);
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].status).toBe(esperado);
+    });
+
+    it.each([
+        ['Baja', 'LOW'],
+        ['Media', 'MEDIUM'],
+        ['Alta', 'HIGH'],
+        ['Urgente', 'URGENT'],
+        ['Crítica', 'URGENT'],
+    ])('traduce la prioridad "%s" a %s', (entrada, esperado) => {
+        const result = conCampo('Prioridad', entrada);
+
+        expect(result.issues).toEqual([]);
+        expect(result.tasks[0].priority).toBe(esperado);
+    });
+
+    it('sigue rechazando un estado que no significa nada', () => {
+        const result = conCampo('Estado', 'a medio hacer');
+
+        expect(result.tasks).toEqual([]);
+        expect(result.issues[0].message).toBe(TEMPLATE_MESSAGES.invalidStatus('a medio hacer'));
     });
 });

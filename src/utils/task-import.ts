@@ -15,10 +15,15 @@ import type { TaskPriority, TaskStatus } from '../constants/enums';
  * siendo puro: recibe el contexto ya leído de la base y no toca Prisma. Todos los caminos
  * de fallo se prueban sin levantar Postgres.
  *
- * Aquí también rige la regla de la plantilla: **nada se resuelve a la brava**. Un `Área`
- * que no existe no cae en la primera fase del proyecto (que es lo que hace `chat-task`),
- * y un `Responsable` que no es miembro no deja la tarea sin asignar. Las dos cosas se
- * reportan con su línea y el import entero se detiene.
+ * Nada se resuelve en silencio, pero no todo bloquea. Un archivo escrito por otra IA
+ * acierta el formato y falla los nombres propios del proyecto, así que un `Área` que no
+ * existe coloca la tarea en la primera fase y un `Responsable` que no es miembro la deja
+ * sin asignar: en ambos casos se emite un **aviso** con su línea y la tarea se crea,
+ * porque recolocarla en el tablero cuesta dos clics y rehacer el archivo no.
+ *
+ * Lo que sí detiene el import entero es aquello que no tiene arreglo razonable al vuelo:
+ * un proyecto sin ninguna fase donde colocar nada, o un título que ya existe y crearía un
+ * duplicado indistinguible.
  */
 
 export interface ImportContext {
@@ -46,7 +51,10 @@ export interface ResolvedTask {
 
 export interface ResolveResult {
     tasks: ResolvedTask[];
+    /** Impiden importar: el archivo se rechaza entero. */
     issues: TemplateIssue[];
+    /** La tarea se creó, pero colocada de otra forma. Se muestran tras importar. */
+    warnings: TemplateIssue[];
 }
 
 export const IMPORT_MESSAGES = {
@@ -73,7 +81,7 @@ export function resolveTemplateTasks(
     context: ImportContext,
 ): ResolveResult {
     if (context.phases.length === 0) {
-        return { tasks: [], issues: [{ line: 1, message: IMPORT_MESSAGES.noPhases }] };
+        return { tasks: [], issues: [{ line: 1, message: IMPORT_MESSAGES.noPhases }], warnings: [] };
     }
 
     const phasesByName = new Map(
@@ -93,6 +101,7 @@ export function resolveTemplateTasks(
 
     const tasks: ResolvedTask[] = [];
     const issues: TemplateIssue[] = [];
+    const warnings: TemplateIssue[] = [];
 
     for (const task of parsed) {
         const at = (message: string): TemplateIssue => ({
@@ -101,9 +110,11 @@ export function resolveTemplateTasks(
             message,
         });
 
-        const phase = phasesByName.get(normalizeForMatch(task.phaseName));
+        // La primera fase es el destino de reserva: el orden de `context.phases` es el
+        // del proyecto, así que es la que el usuario ve más a la izquierda en el tablero.
+        let phase = phasesByName.get(normalizeForMatch(task.phaseName));
         if (!phase) {
-            issues.push(
+            warnings.push(
                 at(
                     IMPORT_MESSAGES.unknownPhase(
                         task.phaseName,
@@ -111,7 +122,7 @@ export function resolveTemplateTasks(
                     ),
                 ),
             );
-            continue;
+            phase = context.phases[0];
         }
 
         let assignedTo: string | null = null;
@@ -119,11 +130,8 @@ export function resolveTemplateTasks(
             // Coincidencia exacta, no el `includes` de `chat-task`: asignarle a otra
             // persona la tarea equivocada es peor que pedir que se escriba el nombre bien.
             const found = membersByName.get(normalizeForMatch(task.assigneeName));
-            if (!found) {
-                issues.push(at(IMPORT_MESSAGES.unknownAssignee(task.assigneeName)));
-                continue;
-            }
-            assignedTo = found;
+            if (found) assignedTo = found;
+            else warnings.push(at(IMPORT_MESSAGES.unknownAssignee(task.assigneeName)));
         }
 
         if (existingTitles.has(normalizeForMatch(task.title))) {
@@ -148,5 +156,5 @@ export function resolveTemplateTasks(
         });
     }
 
-    return { tasks, issues };
+    return { tasks, issues, warnings };
 }
