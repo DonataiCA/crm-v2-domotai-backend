@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { ARCHIVED_PROJECT_STATUS } from '../constants/enums';
 
 interface CalendarFilters {
     dateFrom?: string;
@@ -59,6 +60,52 @@ export const CalendarRepository = {
             include: calendarIncludes,
         });
     },
+
+    /**
+     * Hitos de proyecto que caen dentro del rango. No es un solapamiento: sólo
+     * interesan los extremos (inicio y fin), que es lo que se pinta en la grilla,
+     * así que un proyecto que atraviesa el mes entero sin empezar ni terminar en
+     * él no aparece.
+     */
+    findProjectMilestones: (orgId: string, from: Date, to: Date) =>
+        prisma.project.findMany({
+            where: {
+                organizationId: orgId,
+                status: { not: ARCHIVED_PROJECT_STATUS },
+                OR: [
+                    { startDate: { gte: from, lte: to } },
+                    { endDate: { gte: from, lte: to } },
+                ],
+            },
+            select: { id: true, name: true, status: true, startDate: true, endDate: true },
+            orderBy: { startDate: 'asc' },
+        }),
+
+    /**
+     * Igual que el anterior para las fases. `ProjectPhase` no tiene
+     * `organizationId` propio: el aislamiento va por la relación `project` y
+     * quitarlo expone las fases de otras organizaciones.
+     */
+    findPhaseMilestones: (orgId: string, from: Date, to: Date) =>
+        prisma.projectPhase.findMany({
+            where: {
+                project: { organizationId: orgId, status: { not: ARCHIVED_PROJECT_STATUS } },
+                OR: [
+                    { startDate: { gte: from, lte: to } },
+                    { endDate: { gte: from, lte: to } },
+                ],
+            },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                startDate: true,
+                endDate: true,
+                projectId: true,
+                project: { select: { id: true, name: true } },
+            },
+            orderBy: { startDate: 'asc' },
+        }),
 
     findById: (id: string, organizationId?: string) =>
         prisma.calendarEvent.findFirst({
