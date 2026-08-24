@@ -15,6 +15,7 @@ import {
     MAX_CHAT_MESSAGE_CHARS,
     MAX_DOCUMENT_CHARS,
     MAX_DOCUMENT_FILENAME_CHARS,
+    MAX_TEMPLATE_CHARS,
 } from '../constants/document';
 
 export const PHASE_DATE_RANGE_MESSAGE = 'End date must be on or after the start date';
@@ -97,6 +98,26 @@ export const chatTaskSchema = z.object({
         });
     }
 });
+
+/**
+ * Cuerpo de `POST /projects/:projectId/import-tasks`.
+ *
+ * Hermano de `chatTaskSchema`, pero sin `message`: la importación por plantilla no tiene
+ * instrucción escrita a mano, el archivo es toda la petición. El tope del contenido es
+ * mucho más alto porque no acaba dentro de ningún prompt: lo lee `parseTaskTemplate`.
+ *
+ * Aquí sólo se comprueba la forma del sobre. Lo que hay dentro del archivo lo valida el
+ * parser línea a línea, que es quien puede decir *dónde* está el error.
+ */
+export const importTasksSchema = z.object({
+    document: z.object({
+        fileName: z.string().min(1, 'File name is required').max(MAX_DOCUMENT_FILENAME_CHARS),
+        content: z
+            .string()
+            .min(1, 'The document is empty')
+            .max(MAX_TEMPLATE_CHARS, `The document exceeds ${MAX_TEMPLATE_CHARS} characters`),
+    }).strip(),
+}).strip();
 
 export const createProjectTaskSchema = z.object({
     title: z.string().min(1, 'Title is required').max(500),
