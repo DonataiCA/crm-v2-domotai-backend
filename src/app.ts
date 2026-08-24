@@ -19,6 +19,7 @@ import calendarRoutes from './routes/calendar.routes';
 import capacityRoutes from './routes/capacity.routes';
 import incidentRoutes from './routes/incident.routes';
 import invoiceRoutes from './routes/invoice.routes';
+import collectionRoutes from './routes/collection.routes';
 import timeEntryRoutes from './routes/time-entry.routes';
 import financialRoutes from './routes/financial.routes';
 import auditLogRoutes from './routes/audit-log.routes';
@@ -171,6 +172,7 @@ app.use('/incidents', incidentRoutes);
 
 // Invoice routes
 app.use('/invoices', invoiceRoutes);
+app.use('/collections', collectionRoutes);
 
 // Time entry routes
 app.use('/time-entries', timeEntryRoutes);

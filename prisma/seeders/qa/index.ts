@@ -21,6 +21,7 @@ import { seedProjects } from './modules/projects';
 import { seedTags } from './modules/tags';
 import { seedTasks } from './modules/tasks';
 import { seedInvoices } from './modules/invoices';
+import { seedCollections } from './modules/collections';
 import { seedTimeEntries } from './modules/time-entries';
 import { seedCalendar } from './modules/calendar';
 import { seedPortal } from './modules/portal';
@@ -46,6 +47,7 @@ const MODULES: Module[] = [
     { name: 'tags', describe: 'Etiquetas y asignaciones', run: seedTags },
     { name: 'tasks', describe: 'Tareas comerciales, comentarios y enlaces', run: seedTasks },
     { name: 'invoices', describe: 'Facturas y líneas', run: seedInvoices },
+    { name: 'collections', describe: 'Cartera SaaS y sus cobros mensuales', run: seedCollections },
     { name: 'time-entries', describe: 'Registro de horas', run: seedTimeEntries },
     { name: 'calendar', describe: 'Eventos de calendario', run: seedCalendar },
     { name: 'portal', describe: 'Enlaces del portal de cliente', run: seedPortal },
