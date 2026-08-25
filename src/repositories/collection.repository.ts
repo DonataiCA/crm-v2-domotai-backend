@@ -28,6 +28,9 @@ const collectionIncludes = {
     project: { select: { id: true, name: true } },
     // La lista muestra la primera línea como "servicio"; el orden lo decide el consumidor.
     items: { select: { id: true, description: true, total: true } },
+    // Sólo el intervalo: es lo único que la tabla necesita para distinguir un cobro
+    // suelto de uno que nace de un servicio recurrente.
+    subscription: { select: { interval: true } },
 };
 
 function buildWhere(orgId: string, filters: CollectionFilters, today: Date) {

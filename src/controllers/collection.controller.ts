@@ -45,6 +45,9 @@ function toRow(invoice: any, today: Date) {
         currency: invoice.currency,
         status: invoice.status,
         collectionStatus: deriveCollectionStatus(invoice, today),
+        // Cada cuánto se cobra. Sin suscripción detrás es un cobro suelto, que es un
+        // tipo en sí mismo y no un dato que falte.
+        billingType: invoice.subscription?.interval ?? 'ONE_OFF',
         contact: invoice.contact,
         project: invoice.project,
     };

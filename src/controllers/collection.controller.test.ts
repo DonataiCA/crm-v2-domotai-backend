@@ -162,3 +162,33 @@ describe('CollectionController.summary', () => {
         expect(res.json.mock.calls[0][0]).toMatchObject({ dueThisMonth: 40, paidThisMonth: 10, overdue: 7 });
     });
 });
+
+describe('CollectionController.index — tipo de cobro', () => {
+    it('un cobro que nace de un servicio lleva su periodicidad', async () => {
+        findAll.mockResolvedValue([fila({ subscription: { interval: 'QUARTERLY' } })]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].billingType).toBe('QUARTERLY');
+    });
+
+    /** Sin suscripción detrás es un cobro suelto, no un dato que falte. */
+    it('un cobro suelto se marca como pago único', async () => {
+        findAll.mockResolvedValue([fila()]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].billingType).toBe('ONE_OFF');
+    });
+
+    it('no expone la suscripción entera, sólo el tipo', async () => {
+        findAll.mockResolvedValue([fila({ subscription: { interval: 'MONTHLY' } })]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0]).not.toHaveProperty('subscription');
+    });
+});

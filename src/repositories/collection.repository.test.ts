@@ -216,3 +216,17 @@ describe('CollectionRepository.summary', () => {
         expect(result.overdue).toBe(7);
     });
 });
+
+describe('CollectionRepository — de qué servicio viene cada cobro', () => {
+    /**
+     * La lista distingue un cobro suelto de uno que nace de un servicio recurrente, y
+     * para eso necesita el intervalo. Se pide sólo ese campo: traer la suscripción
+     * entera cargaría la consulta con datos que la tabla no pinta.
+     */
+    it('incluye el intervalo de la suscripción, sin traerla entera', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, {}, HOY);
+
+        expect(invoiceFindMany.mock.calls[0][0].include.subscription)
+            .toEqual({ select: { interval: true } });
+    });
+});
