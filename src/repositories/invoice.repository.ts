@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { computeInvoiceTotals } from '../utils/invoice-totals';
 
 interface InvoiceFilters {
     status?: string;
@@ -58,15 +59,20 @@ export const InvoiceRepository = {
         currency?: string;
         notes?: string;
         createdBy?: string;
-        items?: { description: string; quantity: number; unitPrice: number; total: number }[];
+        items?: { description: string; quantity: number; unitPrice: number; total?: number }[];
     }) => {
         const { items, ...invoiceData } = data;
+        // Los importes se calculan aquí, nunca se toman del cliente: un total de línea
+        // que no sea cantidad por precio deja la factura descuadrada consigo misma.
+        const totals = computeInvoiceTotals(items ?? [], invoiceData.tax ?? 0);
+
         return prisma.invoice.create({
             data: {
                 ...invoiceData,
-                items: items && items.length > 0
-                    ? { create: items }
-                    : undefined,
+                subtotal: totals.subtotal,
+                tax: totals.tax,
+                total: totals.total,
+                items: totals.items.length > 0 ? { create: totals.items } : undefined,
             },
             include: invoiceIncludes,
         });
@@ -85,13 +91,19 @@ export const InvoiceRepository = {
         total?: number;
         currency?: string;
         notes?: string | null;
-        items?: { description: string; quantity: number; unitPrice: number; total: number }[];
+        items?: { description: string; quantity: number; unitPrice: number; total?: number }[];
     }, organizationId?: string) => {
         if (organizationId) {
             const record = await prisma.invoice.findFirst({ where: { id, organizationId } });
             if (!record) return null;
         }
         const { items, ...invoiceData } = data;
+        // Si cambian las líneas hay que recalcular: dejar los importes viejos con líneas
+        // nuevas es la forma más silenciosa de descuadrar una factura.
+        const totals = items !== undefined
+            ? computeInvoiceTotals(items, invoiceData.tax ?? 0)
+            : null;
+
         return prisma.$transaction(async (tx) => {
             if (items !== undefined) {
                 await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
@@ -100,9 +112,10 @@ export const InvoiceRepository = {
                 where: { id },
                 data: {
                     ...invoiceData,
-                    items: items !== undefined
-                        ? { create: items }
-                        : undefined,
+                    ...(totals
+                        ? { subtotal: totals.subtotal, tax: totals.tax, total: totals.total }
+                        : {}),
+                    items: totals ? { create: totals.items } : undefined,
                 },
                 include: invoiceIncludes,
             });

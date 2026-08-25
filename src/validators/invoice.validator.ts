@@ -18,7 +18,9 @@ export const createInvoiceSchema = z.object({
         description: z.string().min(1),
         quantity: z.number().or(z.string().transform(Number)),
         unitPrice: z.number().or(z.string().transform(Number)),
-        total: z.number().or(z.string().transform(Number)),
+        // Opcional y, si viene, se ignora: el total lo calcula el servidor a partir de
+        // cantidad y precio. Exigirlo era lo que hacía que el alta devolviera 400.
+        total: z.number().or(z.string().transform(Number)).optional(),
     })).optional(),
 }).strip();
 
