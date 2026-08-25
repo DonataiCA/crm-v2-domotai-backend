@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { addInterval, type BillingInterval } from '../constants/billing';
+import { nextInvoiceNumber, type TransactionClient } from './invoice.repository';
 
 /**
  * Servicios recurrentes: el compromiso de cobro, no el documento.
@@ -51,10 +52,18 @@ export const SubscriptionRepository = {
                 },
             });
 
+            // La nota de un servicio es tan documento de cobro como cualquier otra: sin
+            // número no se puede citar al reclamarla.
+            const invoiceNumber = await nextInvoiceNumber(
+                tx as unknown as TransactionClient,
+                data.organizationId,
+            );
+
             // El primer periodo vence el día en que arranca el servicio, y ese día es el
             // que fija el día de cobro de todos los siguientes.
             await client.invoice.create({
                 data: {
+                    invoiceNumber,
                     organizationId: data.organizationId,
                     contactId: data.contactId,
                     projectId: data.projectId ?? null,

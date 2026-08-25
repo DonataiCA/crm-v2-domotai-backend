@@ -2,7 +2,7 @@ import { prisma } from '../config/prisma';
 import { computeInvoiceTotals } from '../utils/invoice-totals';
 
 /** Lo que se usa del cliente de Prisma dentro de una transacción. */
-type TransactionClient = {
+export type TransactionClient = {
     invoice: {
         findFirst: (args: unknown) => Promise<{ invoiceNumber: string | null } | null>;
         create: (args: unknown) => Promise<unknown>;
@@ -38,7 +38,7 @@ const invoiceIncludes = {
  * Recibe el cliente de la transacción, no `prisma`: la consulta del último número y el
  * insert tienen que ir en la misma, o dos altas simultáneas se llevan el mismo número.
  */
-async function nextInvoiceNumber(tx: TransactionClient, organizationId: string): Promise<string> {
+export async function nextInvoiceNumber(tx: TransactionClient, organizationId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `${year}-`;
 

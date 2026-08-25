@@ -128,3 +128,15 @@ describe('SubscriptionRepository — aislamiento por organización', () => {
         expect(subFindMany.mock.calls[0][0]).toMatchObject({ skip: 20, take: 10 });
     });
 });
+
+describe('SubscriptionRepository — la nota lleva número', () => {
+    /**
+     * La nota de un servicio es tan documento de cobro como cualquier otra: sin número
+     * no se puede citar al reclamarla, y el PDF cae a los ocho primeros caracteres del id.
+     */
+    it('asigna correlativo a la primera nota', async () => {
+        await SubscriptionRepository.createWithFirstInvoice(DATOS, HOY);
+
+        expect(invoiceCreate.mock.calls[0][0].data.invoiceNumber).toMatch(/^\d{4}-\d{4}$/);
+    });
+});
