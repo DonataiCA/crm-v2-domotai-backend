@@ -97,6 +97,45 @@ export const SubscriptionRepository = {
             });
         }),
 
+    /**
+     * Cambia el plan de un servicio vivo. **`coveredUntil` no se toca**: lo ya emitido
+     * sigue emitido y el calendario nuevo empieza donde acaba lo cubierto. Rehacer el
+     * pasado obligaría a inventar abonos por lo ya facturado.
+     */
+    update: async (
+        id: string,
+        data: { interval?: BillingInterval; amount?: number; serviceName?: string },
+        organizationId: string,
+    ) => {
+        const existing = await prisma.serviceSubscription.findFirst({
+            where: { id, organizationId },
+        });
+        if (!existing) return null;
+
+        return prisma.serviceSubscription.update({
+            where: { id },
+            data,
+            include: subscriptionIncludes,
+        });
+    },
+
+    /**
+     * Da de baja el servicio. No anula las notas ya emitidas: el servicio se prestó y
+     * esos cobros siguen siendo exigibles. Sólo impide que se generen nuevas.
+     */
+    cancel: async (id: string, organizationId: string, today: Date) => {
+        const existing = await prisma.serviceSubscription.findFirst({
+            where: { id, organizationId },
+        });
+        if (!existing) return null;
+
+        return prisma.serviceSubscription.update({
+            where: { id },
+            data: { cancelledAt: today },
+            include: subscriptionIncludes,
+        });
+    },
+
     findAll: (organizationId: string, skip: number, take: number) =>
         prisma.serviceSubscription.findMany({
             skip,

@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { createWithFirstInvoice, findAll, count } = vi.hoisted(() => ({
+const { createWithFirstInvoice, findAll, count, update, cancel } = vi.hoisted(() => ({
     createWithFirstInvoice: vi.fn(),
     findAll: vi.fn(),
     count: vi.fn(),
+    update: vi.fn(),
+    cancel: vi.fn(),
 }));
 
 vi.mock('../repositories/subscription.repository', () => ({
-    SubscriptionRepository: { createWithFirstInvoice, findAll, count },
+    SubscriptionRepository: { createWithFirstInvoice, findAll, count, update, cancel },
 }));
 
 import { SubscriptionController } from './subscription.controller';
@@ -104,5 +106,49 @@ describe('SubscriptionController.index', () => {
         await SubscriptionController.index(fakeReq({ query: { limit: '10' } }), res);
 
         expect(res.json.mock.calls[0][0].pagination).toMatchObject({ total: 42, pages: 5 });
+    });
+});
+
+describe('SubscriptionController.update', () => {
+    it('acota al orgId del request', async () => {
+        update.mockResolvedValue({ id: 'sub-1' });
+
+        await SubscriptionController.update(
+            fakeReq({ params: { id: 'sub-1' }, body: { interval: 'QUARTERLY' } }),
+            fakeRes(),
+        );
+
+        expect(update.mock.calls[0][2]).toBe('org-A');
+    });
+
+    it('404 si el servicio no es de esta organización', async () => {
+        update.mockResolvedValue(null);
+        const res = fakeRes();
+
+        await SubscriptionController.update(
+            fakeReq({ params: { id: 'ajeno' }, body: { interval: 'MONTHLY' } }),
+            res,
+        );
+
+        expect(res.status).toHaveBeenCalledWith(404);
+    });
+});
+
+describe('SubscriptionController.cancel', () => {
+    it('marca la baja acotando por organización', async () => {
+        cancel.mockResolvedValue({ id: 'sub-1', cancelledAt: new Date() });
+
+        await SubscriptionController.cancel(fakeReq({ params: { id: 'sub-1' } }), fakeRes());
+
+        expect(cancel.mock.calls[0][1]).toBe('org-A');
+    });
+
+    it('404 si no existe', async () => {
+        cancel.mockResolvedValue(null);
+        const res = fakeRes();
+
+        await SubscriptionController.cancel(fakeReq({ params: { id: 'x' } }), res);
+
+        expect(res.status).toHaveBeenCalledWith(404);
     });
 });

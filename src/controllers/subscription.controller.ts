@@ -25,6 +25,9 @@ export const SubscriptionController = {
                     // permitiría dar de alta un servicio en otra organización.
                     organizationId: orgId,
                     createdBy,
+                    // La plataforma opera en una sola moneda. Fijarla aquí evita que un
+                    // cobro en otra divisa entre por API y desmonte las sumas del resumen.
+                    currency: 'USD',
                     // Prisma 6 rechaza "2026-09-01": hay que convertirlo aquí.
                     startDate: new Date(body.startDate),
                 },
@@ -34,6 +37,40 @@ export const SubscriptionController = {
             res.status(201).json(subscription);
         } catch (error) {
             return sendError(res, 500, 'Failed to create subscription', error);
+        }
+    },
+
+    update: async (req: Request, res: Response) => {
+        try {
+            const orgId = (req as any).orgId;
+
+            const subscription = await SubscriptionRepository.update(
+                req.params.id,
+                req.body,
+                orgId,
+            );
+            if (!subscription) return sendError(res, 404, 'Subscription not found');
+
+            res.json(subscription);
+        } catch (error) {
+            return sendError(res, 500, 'Failed to update subscription', error);
+        }
+    },
+
+    cancel: async (req: Request, res: Response) => {
+        try {
+            const orgId = (req as any).orgId;
+
+            const subscription = await SubscriptionRepository.cancel(
+                req.params.id,
+                orgId,
+                new Date(),
+            );
+            if (!subscription) return sendError(res, 404, 'Subscription not found');
+
+            res.json(subscription);
+        } catch (error) {
+            return sendError(res, 500, 'Failed to cancel subscription', error);
         }
     },
 

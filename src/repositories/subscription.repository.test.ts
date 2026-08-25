@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // `vi.mock` se hoistea, así que los mocks vienen de `vi.hoisted()`.
-const { subCreate, subUpdate, subFindMany, subCount, invoiceCreate } = vi.hoisted(() => ({
+const { subCreate, subUpdate, subFindMany, subFindFirst, subCount, invoiceCreate } = vi.hoisted(() => ({
     subCreate: vi.fn(),
     subUpdate: vi.fn(),
     subFindMany: vi.fn(),
+    subFindFirst: vi.fn(),
     subCount: vi.fn(),
     invoiceCreate: vi.fn(),
 }));
@@ -17,6 +18,7 @@ vi.mock('../config/prisma', () => {
             create: subCreate,
             update: subUpdate,
             findMany: subFindMany,
+            findFirst: subFindFirst,
             count: subCount,
         },
         invoice: { create: invoiceCreate, findFirst: vi.fn().mockResolvedValue(null) },
@@ -48,6 +50,7 @@ beforeEach(() => {
     subUpdate.mockResolvedValue({ id: 'sub-1' });
     invoiceCreate.mockResolvedValue({ id: 'inv-1' });
     subFindMany.mockResolvedValue([]);
+    subFindFirst.mockResolvedValue({ id: 'sub-1', organizationId: 'org-1' });
     subCount.mockResolvedValue(0);
 });
 
@@ -138,5 +141,67 @@ describe('SubscriptionRepository — la nota lleva número', () => {
         await SubscriptionRepository.createWithFirstInvoice(DATOS, HOY);
 
         expect(invoiceCreate.mock.calls[0][0].data.invoiceNumber).toMatch(/^\d{4}-\d{4}$/);
+    });
+});
+
+describe('SubscriptionRepository.update', () => {
+    /**
+     * Cambiar de mensual a trimestral no rehace el pasado: lo ya emitido sigue emitido y
+     * `coveredUntil` no se mueve. El calendario nuevo empieza donde acaba lo cubierto,
+     * que es lo que evita tener que inventar abonos por lo ya facturado.
+     */
+    it('no toca coveredUntil al cambiar la periodicidad', async () => {
+        await SubscriptionRepository.update('sub-1', { interval: 'QUARTERLY' }, 'org-1');
+
+        expect(subUpdate.mock.calls[0][0].data).not.toHaveProperty('coveredUntil');
+    });
+
+    it('cambia periodicidad, importe y nombre', async () => {
+        await SubscriptionRepository.update(
+            'sub-1',
+            { interval: 'ANNUAL', amount: 9600, serviceName: 'Licencia anual' },
+            'org-1',
+        );
+
+        expect(subUpdate.mock.calls[0][0].data).toMatchObject({
+            interval: 'ANNUAL', amount: 9600, serviceName: 'Licencia anual',
+        });
+    });
+
+    it('comprueba que el servicio es de la organización antes de tocarlo', async () => {
+        await SubscriptionRepository.update('sub-1', { interval: 'MONTHLY' }, 'org-1');
+
+        expect(subFindFirst.mock.calls[0][0].where)
+            .toEqual({ id: 'sub-1', organizationId: 'org-1' });
+    });
+
+    it('devuelve null si el servicio es de otra organización', async () => {
+        subFindFirst.mockResolvedValue(null);
+
+        expect(await SubscriptionRepository.update('ajeno', { interval: 'MONTHLY' }, 'org-1'))
+            .toBeNull();
+        expect(subUpdate).not.toHaveBeenCalled();
+    });
+});
+
+describe('SubscriptionRepository.cancel', () => {
+    it('marca la fecha de baja', async () => {
+        await SubscriptionRepository.cancel('sub-1', 'org-1', HOY);
+
+        expect(subUpdate.mock.calls[0][0].data.cancelledAt).toEqual(HOY);
+    });
+
+    /** Las notas ya emitidas siguen siendo exigibles: el servicio se prestó. */
+    it('no toca las notas ya emitidas', async () => {
+        await SubscriptionRepository.cancel('sub-1', 'org-1', HOY);
+
+        expect(invoiceCreate).not.toHaveBeenCalled();
+        expect(subUpdate.mock.calls[0][0].data).not.toHaveProperty('coveredUntil');
+    });
+
+    it('no cancela un servicio de otra organización', async () => {
+        subFindFirst.mockResolvedValue(null);
+
+        expect(await SubscriptionRepository.cancel('ajeno', 'org-1', HOY)).toBeNull();
     });
 });

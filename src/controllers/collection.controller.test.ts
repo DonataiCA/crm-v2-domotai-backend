@@ -192,3 +192,24 @@ describe('CollectionController.index — tipo de cobro', () => {
         expect(res.json.mock.calls[0][0].data[0]).not.toHaveProperty('subscription');
     });
 });
+
+describe('CollectionController.index — a qué servicio apuntar', () => {
+    /** Sin el id no hay a qué apuntar para cambiar el plan desde la lista. */
+    it('expone el id del servicio del que viene el cobro', async () => {
+        findAll.mockResolvedValue([fila({ subscriptionId: 'sub-9', subscription: { interval: 'MONTHLY' } })]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].subscriptionId).toBe('sub-9');
+    });
+
+    it('un cobro suelto no apunta a ningún servicio', async () => {
+        findAll.mockResolvedValue([fila()]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].subscriptionId).toBeNull();
+    });
+});

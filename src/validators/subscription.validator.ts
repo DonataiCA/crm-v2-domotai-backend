@@ -18,3 +18,15 @@ export const createSubscriptionSchema = z.object({
     startDate: z.string().min(1, 'Start date is required'),
     notes: z.string().max(5000).optional().nullable(),
 }).strip();
+
+/**
+ * Cambio de plan. Todo opcional: se manda sólo lo que cambia. `startDate` no está a
+ * propósito — mover el inicio de un servicio ya facturado descuadraría lo emitido.
+ */
+export const updateSubscriptionSchema = z.object({
+    serviceName: z.string().min(1).max(200).optional(),
+    amount: z.number().or(z.string().transform(Number)).refine((v) => v > 0, {
+        message: 'Amount must be greater than zero',
+    }).optional(),
+    interval: z.enum(BILLING_INTERVALS).optional(),
+}).strip();
