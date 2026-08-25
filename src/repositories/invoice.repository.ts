@@ -1,6 +1,14 @@
 import { prisma } from '../config/prisma';
 import { computeInvoiceTotals } from '../utils/invoice-totals';
 
+/** Lo que se usa del cliente de Prisma dentro de una transacción. */
+type TransactionClient = {
+    invoice: {
+        findFirst: (args: unknown) => Promise<{ invoiceNumber: string | null } | null>;
+        create: (args: unknown) => Promise<unknown>;
+    };
+};
+
 interface InvoiceFilters {
     status?: string;
     contactId?: string;
@@ -21,6 +29,28 @@ const invoiceIncludes = {
     creator: { select: { id: true, fullName: true, email: true } },
     items: true,
 };
+
+/**
+ * Siguiente correlativo de la organización para el año en curso, con formato
+ * `AAAA-NNNN`. Se rellena a cuatro cifras para que el orden alfabético coincida con el
+ * numérico: sin eso, `2026-10` iría antes que `2026-9`.
+ *
+ * Recibe el cliente de la transacción, no `prisma`: la consulta del último número y el
+ * insert tienen que ir en la misma, o dos altas simultáneas se llevan el mismo número.
+ */
+async function nextInvoiceNumber(tx: TransactionClient, organizationId: string): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `${year}-`;
+
+    const last = await tx.invoice.findFirst({
+        where: { organizationId, invoiceNumber: { startsWith: prefix } },
+        orderBy: { invoiceNumber: 'desc' },
+        select: { invoiceNumber: true },
+    });
+
+    const lastSeq = last?.invoiceNumber ? Number(last.invoiceNumber.slice(prefix.length)) : 0;
+    return `${prefix}${String((Number.isFinite(lastSeq) ? lastSeq : 0) + 1).padStart(4, '0')}`;
+}
 
 export const InvoiceRepository = {
     findAll: (orgId: string, skip: number, take: number, filters?: InvoiceFilters) => {
@@ -66,15 +96,21 @@ export const InvoiceRepository = {
         // que no sea cantidad por precio deja la factura descuadrada consigo misma.
         const totals = computeInvoiceTotals(items ?? [], invoiceData.tax ?? 0);
 
-        return prisma.invoice.create({
-            data: {
-                ...invoiceData,
-                subtotal: totals.subtotal,
-                tax: totals.tax,
-                total: totals.total,
-                items: totals.items.length > 0 ? { create: totals.items } : undefined,
-            },
-            include: invoiceIncludes,
+        return prisma.$transaction(async (tx) => {
+            const invoiceNumber = invoiceData.invoiceNumber
+                ?? await nextInvoiceNumber(tx as unknown as TransactionClient, invoiceData.organizationId);
+
+            return (tx as typeof prisma).invoice.create({
+                data: {
+                    ...invoiceData,
+                    invoiceNumber,
+                    subtotal: totals.subtotal,
+                    tax: totals.tax,
+                    total: totals.total,
+                    items: totals.items.length > 0 ? { create: totals.items } : undefined,
+                },
+                include: invoiceIncludes,
+            });
         });
     },
 

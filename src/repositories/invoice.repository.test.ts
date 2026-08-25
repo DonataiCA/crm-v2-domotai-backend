@@ -82,3 +82,47 @@ describe('InvoiceRepository.update — importes', () => {
         expect(data.total).toBe(90);
     });
 });
+
+describe('InvoiceRepository.create — número correlativo', () => {
+    it('asigna el siguiente al último de la organización', async () => {
+        invoiceFindFirst.mockResolvedValue({ invoiceNumber: '2026-0007' });
+
+        await InvoiceRepository.create({ organizationId: 'org-1' } as never);
+
+        expect(datosCreados().invoiceNumber).toBe('2026-0008');
+    });
+
+    it('empieza en 0001 cuando la organización no tiene ninguna de este año', async () => {
+        invoiceFindFirst.mockResolvedValue(null);
+
+        await InvoiceRepository.create({ organizationId: 'org-1' } as never);
+
+        expect(datosCreados().invoiceNumber).toMatch(/^\d{4}-0001$/);
+    });
+
+    it('respeta el número que venga dado', async () => {
+        await InvoiceRepository.create({ organizationId: 'org-1', invoiceNumber: 'A-1' } as never);
+
+        expect(datosCreados().invoiceNumber).toBe('A-1');
+        expect(invoiceFindFirst).not.toHaveBeenCalled();
+    });
+
+    /** Numerar mirando toda la plataforma filtraría facturas de otros clientes. */
+    it('busca el último dentro de su organización y de su año', async () => {
+        invoiceFindFirst.mockResolvedValue(null);
+
+        await InvoiceRepository.create({ organizationId: 'org-1' } as never);
+
+        const where = invoiceFindFirst.mock.calls[0][0].where;
+        expect(where.organizationId).toBe('org-1');
+        expect(where.invoiceNumber.startsWith).toBe(`${new Date().getFullYear()}-`);
+    });
+
+    it('rellena a cuatro cifras, para que ordenen como texto', async () => {
+        invoiceFindFirst.mockResolvedValue({ invoiceNumber: '2026-0099' });
+
+        await InvoiceRepository.create({ organizationId: 'org-1' } as never);
+
+        expect(datosCreados().invoiceNumber).toBe('2026-0100');
+    });
+});
