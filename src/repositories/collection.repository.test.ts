@@ -245,3 +245,74 @@ describe('CollectionRepository — de qué servicio viene cada cobro', () => {
             .toEqual({ select: { interval: true, cancelledAt: true } });
     });
 });
+
+describe('CollectionRepository — todo lo pendiente de cobro', () => {
+    /**
+     * Es lo que la tarjeta "Total outstanding" del panel resume: morosos y en plazo
+     * juntos. Sin este filtro habría que exportar dos veces y pegar los archivos.
+     */
+    it('UNPAID pide las no pagadas, sin mirar el vencimiento', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { status: 'UNPAID' }, HOY);
+        const where = whereDe(invoiceFindMany);
+
+        expect(where.status).toEqual({ notIn: ['DRAFT', 'CANCELLED', 'PAID'] });
+        expect(where.AND).toContainEqual({ paidAt: null });
+    });
+
+    it('UNPAID no acota por fecha: incluye lo vencido y lo que aún no vence', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { status: 'UNPAID' }, HOY);
+        const and = whereDe(invoiceFindMany).AND as Array<Record<string, unknown>>;
+
+        expect(and.some((c) => 'dueDate' in c)).toBe(false);
+    });
+});
+
+describe('CollectionRepository — qué fecha delimita el rango', () => {
+    const DESDE = new Date('2026-08-01T00:00:00.000Z');
+    const HASTA = new Date('2026-08-31T23:59:59.999Z');
+    const RANGO = { dueFrom: DESDE, dueTo: HASTA };
+    const ventana = { gte: DESDE, lte: HASTA };
+
+    /** Las condiciones acumuladas en AND, que es donde acaba el filtro de fechas. */
+    const condiciones = (mock: typeof invoiceFindMany): Array<Record<string, unknown>> =>
+        (whereDe(mock).AND as Array<Record<string, unknown>>) ?? [];
+
+    it('por defecto delimita por vencimiento: "de lo que vencía en agosto"', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, RANGO, HOY);
+
+        expect(condiciones(invoiceFindMany)).toContainEqual({ dueDate: ventana });
+    });
+
+    /**
+     * Una factura que venció el 31 de julio y se cobró el 25 de agosto es dinero que
+     * entró en agosto. Con el criterio de vencimiento desaparece del informe de agosto
+     * y reaparece en el de julio, donde todavía no se había cobrado nada.
+     */
+    it('con EVENT, una cobrada entra por su fecha de pago aunque venciera antes', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { ...RANGO, dateBasis: 'EVENT' }, HOY);
+
+        const [fechas] = condiciones(invoiceFindMany).filter((c) => 'OR' in c);
+        expect((fechas.OR as unknown[])[0]).toEqual({ paidAt: ventana });
+    });
+
+    it('y una sin cobrar sigue entrando por su vencimiento, que es lo único que tiene', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { ...RANGO, dateBasis: 'EVENT' }, HOY);
+
+        const [fechas] = condiciones(invoiceFindMany).filter((c) => 'OR' in c);
+        expect((fechas.OR as unknown[])[1]).toEqual({
+            AND: [{ paidAt: null }, { dueDate: ventana }],
+        });
+    });
+
+    it('sin rango no añade ninguna condición de fecha, ni siquiera con EVENT', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { dateBasis: 'EVENT' }, HOY);
+
+        expect(JSON.stringify(condiciones(invoiceFindMany))).not.toContain('paidAt');
+    });
+
+    it('el contador aplica el mismo criterio, o el total no cuadraría con las filas', async () => {
+        await CollectionRepository.count(ORG, { ...RANGO, dateBasis: 'EVENT' }, HOY);
+
+        expect(condiciones(invoiceCount).some((c) => 'OR' in c)).toBe(true);
+    });
+});

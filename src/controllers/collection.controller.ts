@@ -77,6 +77,9 @@ export const CollectionController = {
                 search: (req.query.search as string) || undefined,
                 dueFrom: parseDate(req.query.dueFrom),
                 dueTo: parseDate(req.query.dueTo),
+                // Sólo se acepta el criterio explícito; cualquier otra cosa cae en el
+                // de siempre, que es el que usa la propia lista.
+                dateBasis: req.query.dateBasis === 'EVENT' ? 'EVENT' : 'DUE',
             };
 
             const [rows, total] = await Promise.all([

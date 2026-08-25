@@ -16,10 +16,18 @@
  */
 export const PAYMENT_GRACE_DAYS = 5;
 
-/** Los tres estados que la página de cobranzas distingue. */
-export const COLLECTION_STATUSES = ['PAID', 'DUE', 'OVERDUE'] as const;
+/**
+ * Lo que la página puede pedir. Los tres primeros son estados que una fila tiene;
+ * `UNPAID` **no lo es**: es la unión de `DUE` y `OVERDUE`, y existe para poder pedir de
+ * una vez todo lo pendiente de cobro —lo que el panel resume como "Total outstanding"—
+ * sin exportar dos veces y pegar los archivos.
+ */
+export const COLLECTION_STATUSES = ['PAID', 'DUE', 'OVERDUE', 'UNPAID'] as const;
 
 export type CollectionStatus = (typeof COLLECTION_STATUSES)[number];
+
+/** Lo que `deriveCollectionStatus` puede devolver: `UNPAID` nunca sale de una fila. */
+export type DerivedCollectionStatus = Exclude<CollectionStatus, 'UNPAID'>;
 
 /**
  * Estados de factura que representan un cobro real. Un borrador todavía no se ha
@@ -46,7 +54,7 @@ export interface CollectibleInvoice {
 export function deriveCollectionStatus(
     invoice: CollectibleInvoice,
     today: Date,
-): CollectionStatus {
+): DerivedCollectionStatus {
     if (invoice.status === 'PAID' || invoice.paidAt) return 'PAID';
 
     // Sin vencimiento no hay plazo que incumplir, así que no puede ser morosa.

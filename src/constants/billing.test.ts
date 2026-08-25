@@ -91,8 +91,23 @@ describe('isCollectible — qué es un cobro y qué no', () => {
 });
 
 describe('COLLECTION_STATUSES', () => {
-    it('son los tres que la página muestra', () => {
-        expect([...COLLECTION_STATUSES]).toEqual(['PAID', 'DUE', 'OVERDUE']);
+    it('son los que la página puede pedir', () => {
+        expect([...COLLECTION_STATUSES]).toEqual(['PAID', 'DUE', 'OVERDUE', 'UNPAID']);
+    });
+
+    /**
+     * UNPAID no es un estado que tenga una fila: es la unión de DUE y OVERDUE, y existe
+     * para poder pedir "todo lo pendiente de cobro" de una vez. Ninguna fila se deriva
+     * como UNPAID.
+     */
+    it('UNPAID es un filtro, no un estado que se derive', () => {
+        const derivados = [
+            deriveCollectionStatus({ status: 'PAID', dueDate: null, paidAt: null }, HOY),
+            deriveCollectionStatus({ status: 'SENT', dueDate: null, paidAt: null }, HOY),
+            deriveCollectionStatus({ status: 'SENT', dueDate: new Date('2020-01-01'), paidAt: null }, HOY),
+        ];
+
+        expect(derivados).not.toContain('UNPAID');
     });
 });
 
