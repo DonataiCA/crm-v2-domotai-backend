@@ -126,6 +126,7 @@ model Profile {
   tagsCreated Tag[] @relation("TagCreatedBy")
 
   @@map("profiles")
+  createdSubscriptions ServiceSubscription[] @relation("SubscriptionCreatedBy")
 }
 
 // ─── ORGANIZATIONS ──────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ model Organization {
   tags             Tag[]
 
   @@map("organizations")
+  subscriptions ServiceSubscription[]
 }
 
 model OrganizationMember {
@@ -215,6 +217,7 @@ model Contact {
   leads    Lead[]
   tasks    Task[]         @relation("TaskContact")
   invoices Invoice[]
+  subscriptions ServiceSubscription[]
   calendarEvents CalendarEvent[] @relation("CalendarContact")
 
   @@index([organizationId, deletedAt])
@@ -448,6 +451,7 @@ model Project {
   healthChecks    HealthCheck[]
 
   @@map("projects")
+  subscriptions ServiceSubscription[]
 }
 
 // ─── CLIENT PORTAL SHARES ───────────────────────────────────────────────────
@@ -829,14 +833,59 @@ model Invoice {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  /** Servicio recurrente del que nació esta nota, si no es un cobro suelto. */
+  subscriptionId String?
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
   project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
   creator      Profile?     @relation("InvoiceCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  subscription ServiceSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   items InvoiceItem[]
 
+  @@index([organizationId, subscriptionId])
   @@map("invoices")
+}
+
+// ─── SERVICIOS RECURRENTES ──────────────────────────────────────────────────
+
+/**
+ * Compromiso de cobro que se repite: un SaaS mensual, un soporte anual. No es un
+ * documento — los documentos son las `Invoice` que genera —, sino el acuerdo que dice
+ * cuánto y cada cuánto se le cobra a un cliente hasta que cancele.
+ */
+model ServiceSubscription {
+  id             String    @id @default(uuid())
+  organizationId String
+  contactId      String
+  projectId      String?
+  /** Lo que se cobra. Va como descripción de la línea de cada nota. */
+  serviceName    String
+  amount         Decimal   @db.Decimal(12, 2)
+  currency       String?   @default("USD")
+  /** MONTHLY | QUARTERLY | BIANNUAL | ANNUAL */
+  interval       String
+  /** Inicio del primer periodo; su día fija el día de cobro. */
+  startDate      DateTime
+  /** Mientras sea null el servicio sigue vivo. */
+  cancelledAt    DateTime?
+  /** Fin del último periodo ya emitido: evita emitir dos veces lo mismo. */
+  coveredUntil   DateTime?
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  creator      Profile?     @relation("SubscriptionCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  invoices Invoice[]
+
+  @@index([organizationId, cancelledAt])
+  @@map("service_subscriptions")
 }
 
 model InvoiceItem {
