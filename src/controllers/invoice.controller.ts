@@ -7,6 +7,24 @@ import { notify } from '../utils/notify';
 import { generateInvoicePDF } from '../utils/pdf';
 import { emailService } from '../utils/email';
 
+/**
+ * Las fechas llegan como cadena (`"2026-09-15"`) y Prisma 6 las rechaza con
+ * `premature end of input. Expected ISO-8601 DateTime`, que sale al cliente como un 500
+ * opaco y parece un fallo del endpoint. Se convierten aquí, que es donde se conoce el
+ * formato de entrada.
+ *
+ * Lo ausente sigue ausente y lo nulo sigue nulo: convertir `undefined` en una fecha
+ * pondría el día de hoy donde el usuario no puso nada.
+ */
+function withDates<T extends Record<string, unknown>>(body: T): T {
+    const parsed: Record<string, unknown> = { ...body };
+    for (const field of ['issueDate', 'dueDate', 'paidAt']) {
+        const value = parsed[field];
+        if (typeof value === 'string' && value) parsed[field] = new Date(value);
+    }
+    return parsed as T;
+}
+
 export const InvoiceController = {
     index: async (req: Request, res: Response) => {
         try {
@@ -58,7 +76,7 @@ export const InvoiceController = {
 
             const userId = (req as any).userId;
             const invoice = await InvoiceRepository.create({
-                ...req.body,
+                ...withDates(req.body),
                 organizationId: orgId,
                 createdBy: userId,
             });
@@ -76,7 +94,7 @@ export const InvoiceController = {
             const existing = await InvoiceRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Invoice not found');
 
-            const invoice = await InvoiceRepository.update(req.params.id, req.body, orgId);
+            const invoice = await InvoiceRepository.update(req.params.id, withDates(req.body), orgId);
             if (!invoice) return sendError(res, 404, 'Invoice not found');
             res.json(invoice);
             await logAudit(req, { action: 'UPDATE', entityType: 'Invoice', entityId: invoice.id, entityName: invoice.invoiceNumber || invoice.id });
