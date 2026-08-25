@@ -213,3 +213,39 @@ describe('CollectionController.index — a qué servicio apuntar', () => {
         expect(res.json.mock.calls[0][0].data[0].subscriptionId).toBeNull();
     });
 });
+
+describe('CollectionController.index — si el servicio sigue vivo', () => {
+    it('un servicio sin baja está activo', async () => {
+        findAll.mockResolvedValue([fila({
+            subscriptionId: 'sub-1',
+            subscription: { interval: 'MONTHLY', cancelledAt: null },
+        })]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].serviceStatus).toBe('ACTIVE');
+    });
+
+    it('un servicio con fecha de baja está cancelado', async () => {
+        findAll.mockResolvedValue([fila({
+            subscriptionId: 'sub-1',
+            subscription: { interval: 'MONTHLY', cancelledAt: new Date('2026-08-01') },
+        })]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].serviceStatus).toBe('CANCELLED');
+    });
+
+    /** En un pago único no hay servicio del que decir si sigue vivo. */
+    it('un cobro suelto no tiene estado de servicio', async () => {
+        findAll.mockResolvedValue([fila()]);
+        const res = fakeRes();
+
+        await CollectionController.index(fakeReq(), res);
+
+        expect(res.json.mock.calls[0][0].data[0].serviceStatus).toBeNull();
+    });
+});

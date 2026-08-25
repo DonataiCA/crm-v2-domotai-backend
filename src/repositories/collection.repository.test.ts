@@ -242,6 +242,6 @@ describe('CollectionRepository — de qué servicio viene cada cobro', () => {
         await CollectionRepository.findAll(ORG, 0, 10, {}, HOY);
 
         expect(invoiceFindMany.mock.calls[0][0].include.subscription)
-            .toEqual({ select: { interval: true } });
+            .toEqual({ select: { interval: true, cancelledAt: true } });
     });
 });

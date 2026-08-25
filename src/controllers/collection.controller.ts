@@ -50,6 +50,11 @@ function toRow(invoice: any, today: Date) {
         billingType: invoice.subscription?.interval ?? 'ONE_OFF',
         // A qué servicio apunta, para poder cambiarle el plan desde la lista.
         subscriptionId: invoice.subscriptionId ?? null,
+        // Si el servicio sigue vivo. `null` en un cobro suelto: no hay servicio del que
+        // decir si está activo, que es distinto de estarlo o no.
+        serviceStatus: invoice.subscription
+            ? (invoice.subscription.cancelledAt ? 'CANCELLED' : 'ACTIVE')
+            : null,
         contact: invoice.contact,
         project: invoice.project,
     };
