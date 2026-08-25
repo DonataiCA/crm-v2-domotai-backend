@@ -245,3 +245,24 @@ describe('CollectionRepository — de qué servicio viene cada cobro', () => {
             .toEqual({ select: { interval: true, cancelledAt: true } });
     });
 });
+
+describe('CollectionRepository — todo lo pendiente de cobro', () => {
+    /**
+     * Es lo que la tarjeta "Total outstanding" del panel resume: morosos y en plazo
+     * juntos. Sin este filtro habría que exportar dos veces y pegar los archivos.
+     */
+    it('UNPAID pide las no pagadas, sin mirar el vencimiento', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { status: 'UNPAID' }, HOY);
+        const where = whereDe(invoiceFindMany);
+
+        expect(where.status).toEqual({ notIn: ['DRAFT', 'CANCELLED', 'PAID'] });
+        expect(where.AND).toContainEqual({ paidAt: null });
+    });
+
+    it('UNPAID no acota por fecha: incluye lo vencido y lo que aún no vence', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { status: 'UNPAID' }, HOY);
+        const and = whereDe(invoiceFindMany).AND as Array<Record<string, unknown>>;
+
+        expect(and.some((c) => 'dueDate' in c)).toBe(false);
+    });
+});

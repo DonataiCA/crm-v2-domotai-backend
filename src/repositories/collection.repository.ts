@@ -46,6 +46,10 @@ function buildWhere(orgId: string, filters: CollectionFilters, today: Date) {
         where.status = { notIn: UNPAID_STATUSES };
         and.push({ paidAt: null });
         and.push({ dueDate: { lt: cutoff } });
+    } else if (filters.status === 'UNPAID') {
+        // Todo lo que falta por cobrar, vencido o no: es la unión de DUE y OVERDUE.
+        where.status = { notIn: UNPAID_STATUSES };
+        and.push({ paidAt: null });
     } else if (filters.status === 'DUE') {
         where.status = { notIn: UNPAID_STATUSES };
         and.push({ paidAt: null });
