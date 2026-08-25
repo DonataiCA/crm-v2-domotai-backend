@@ -16,6 +16,13 @@ export interface CollectionFilters {
     search?: string;
     dueFrom?: Date;
     dueTo?: Date;
+    /**
+     * Qué fecha delimita el rango. `DUE` responde a «de lo que vencía en agosto,
+     * ¿cuánto hay cobrado?»; `EVENT`, a «¿qué pasó en agosto?» — y para eso cada fila
+     * aporta la fecha que le corresponde: la cobrada, la de su pago; la pendiente, la
+     * de su vencimiento, que es la única que tiene.
+     */
+    dateBasis?: 'DUE' | 'EVENT';
 }
 
 /** Un borrador no se ha enviado y una cancelada no se cobra: ninguno es un cobro. */
@@ -63,7 +70,17 @@ function buildWhere(orgId: string, filters: CollectionFilters, today: Date) {
         const range: Record<string, Date> = {};
         if (filters.dueFrom) range.gte = filters.dueFrom;
         if (filters.dueTo) range.lte = filters.dueTo;
-        and.push({ dueDate: range });
+
+        if (filters.dateBasis === 'EVENT') {
+            // Un cobro que vencía el 31 de julio y entró el 25 de agosto es dinero de
+            // agosto: por vencimiento se caería del informe del mes en que se cobró.
+            // Las que no tienen pago sólo pueden entrar por su vencimiento.
+            and.push({
+                OR: [{ paidAt: range }, { AND: [{ paidAt: null }, { dueDate: range }] }],
+            });
+        } else {
+            and.push({ dueDate: range });
+        }
     }
 
     if (filters.search) {
