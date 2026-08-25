@@ -67,3 +67,64 @@ export function overdueCutoff(today: Date): Date {
     cutoff.setUTCDate(cutoff.getUTCDate() - PAYMENT_GRACE_DAYS);
     return cutoff;
 }
+
+// ─── Periodicidad de los servicios recurrentes ──────────────────────────────
+
+/** Cada cuánto se cobra un servicio. */
+export const BILLING_INTERVALS = ['MONTHLY', 'QUARTERLY', 'BIANNUAL', 'ANNUAL'] as const;
+
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+const MONTHS_PER_INTERVAL: Record<BillingInterval, number> = {
+    MONTHLY: 1,
+    QUARTERLY: 3,
+    BIANNUAL: 6,
+    ANNUAL: 12,
+};
+
+/**
+ * Avanza una fecha un periodo.
+ *
+ * `anchorDay` es el día en que se contrató, y existe por un motivo concreto: quien
+ * empieza un 31 no tiene 31 en febrero. Si se guardara el 28 resultante y se siguiera
+ * sumando desde ahí, la fecha de cobro **se desplazaría hacia atrás para siempre** y ese
+ * cliente acabaría cobrándose el 28 el resto de su vida. Anclando al día original, febrero
+ * cae al 28 pero marzo vuelve al 31.
+ *
+ * Todo en UTC: sumar meses en hora local mueve el día cuando cambia el horario de verano.
+ */
+export function addInterval(date: Date, interval: BillingInterval, anchorDay?: number): Date {
+    const months = MONTHS_PER_INTERVAL[interval];
+    const day = anchorDay ?? date.getUTCDate();
+
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth() + months;
+
+    // El día 0 del mes siguiente es el último del mes destino.
+    const lastDayOfTarget = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+    return new Date(Date.UTC(year, month, Math.min(day, lastDayOfTarget)));
+}
+
+/** Lo mínimo que hace falta de un servicio para saber qué periodo toca emitir. */
+export interface PeriodicSubscription {
+    interval: BillingInterval;
+    startDate: Date;
+    /** Fin del último periodo ya emitido. */
+    coveredUntil: Date | null;
+    cancelledAt: Date | null;
+}
+
+/**
+ * Inicio del periodo que falta por emitir, o `null` si no toca nada.
+ *
+ * Devuelve **uno**, nunca varios: un servicio con tres periodos sin emitir le llegaría al
+ * cliente como tres reclamaciones el mismo día. Quien llame vuelve a preguntar después de
+ * emitir, y así avanza de uno en uno.
+ */
+export function nextPeriodStart(subscription: PeriodicSubscription, today: Date): Date | null {
+    if (subscription.cancelledAt) return null;
+
+    const next = subscription.coveredUntil ?? subscription.startDate;
+    return next <= today ? next : null;
+}

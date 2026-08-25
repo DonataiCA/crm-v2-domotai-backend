@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
     PAYMENT_GRACE_DAYS,
     COLLECTION_STATUSES,
+    BILLING_INTERVALS,
     deriveCollectionStatus,
     isCollectible,
+    addInterval,
+    nextPeriodStart,
 } from './billing';
 
 /**
@@ -90,5 +93,95 @@ describe('isCollectible — qué es un cobro y qué no', () => {
 describe('COLLECTION_STATUSES', () => {
     it('son los tres que la página muestra', () => {
         expect([...COLLECTION_STATUSES]).toEqual(['PAID', 'DUE', 'OVERDUE']);
+    });
+});
+
+describe('BILLING_INTERVALS', () => {
+    it('son las cuatro periodicidades que ofrece el alta', () => {
+        expect([...BILLING_INTERVALS]).toEqual(['MONTHLY', 'QUARTERLY', 'BIANNUAL', 'ANNUAL']);
+    });
+});
+
+describe('addInterval', () => {
+    it('mensual avanza un mes', () => {
+        expect(addInterval(new Date('2026-03-15T00:00:00Z'), 'MONTHLY'))
+            .toEqual(new Date('2026-04-15T00:00:00Z'));
+    });
+
+    it('el 31 cae al último día del mes que no lo tiene', () => {
+        expect(addInterval(new Date('2026-01-31T00:00:00Z'), 'MONTHLY'))
+            .toEqual(new Date('2026-02-28T00:00:00Z'));
+    });
+
+    /**
+     * Sin anclar al día original, la fecha de cobro se desplazaría hacia atrás para
+     * siempre: quien contrata un 31 acabaría cobrando el 28 el resto de su vida.
+     */
+    it('y vuelve al 31 en el mes siguiente, en vez de quedarse en el 28', () => {
+        const feb = addInterval(new Date('2026-01-31T00:00:00Z'), 'MONTHLY');
+
+        expect(addInterval(feb, 'MONTHLY', 31)).toEqual(new Date('2026-03-31T00:00:00Z'));
+    });
+
+    it('respeta el 29 de febrero de un bisiesto', () => {
+        expect(addInterval(new Date('2028-01-31T00:00:00Z'), 'MONTHLY'))
+            .toEqual(new Date('2028-02-29T00:00:00Z'));
+    });
+
+    it('trimestral cruza el fin de año', () => {
+        expect(addInterval(new Date('2026-11-10T00:00:00Z'), 'QUARTERLY'))
+            .toEqual(new Date('2027-02-10T00:00:00Z'));
+    });
+
+    it.each([
+        ['BIANNUAL', 6],
+        ['ANNUAL', 12],
+    ])('%s avanza %i meses', (interval, months) => {
+        expect(addInterval(new Date('2026-01-10T00:00:00Z'), interval as never))
+            .toEqual(new Date(Date.UTC(2026, months as number, 10)));
+    });
+});
+
+describe('nextPeriodStart', () => {
+    const sub = (over: Record<string, unknown> = {}) => ({
+        interval: 'MONTHLY' as const,
+        startDate: new Date('2026-08-01T00:00:00Z'),
+        coveredUntil: null,
+        cancelledAt: null,
+        ...over,
+    });
+
+    it('recién dado de alta, toca su fecha de inicio', () => {
+        expect(nextPeriodStart(sub(), new Date('2026-08-24T00:00:00Z')))
+            .toEqual(new Date('2026-08-01T00:00:00Z'));
+    });
+
+    it('con el periodo cubierto, no toca nada todavía', () => {
+        expect(nextPeriodStart(
+            sub({ coveredUntil: new Date('2026-09-01T00:00:00Z') }),
+            new Date('2026-08-24T00:00:00Z'),
+        )).toBeNull();
+    });
+
+    it('un servicio cancelado no genera más cobros', () => {
+        expect(nextPeriodStart(
+            sub({ cancelledAt: new Date('2026-08-10T00:00:00Z') }),
+            new Date('2026-08-24T00:00:00Z'),
+        )).toBeNull();
+    });
+
+    /** Emitir tres de golpe le llegaría al cliente como tres reclamaciones el mismo día. */
+    it('con tres periodos sin emitir devuelve uno, no tres', () => {
+        expect(nextPeriodStart(
+            sub({ coveredUntil: new Date('2026-05-01T00:00:00Z') }),
+            new Date('2026-08-24T00:00:00Z'),
+        )).toEqual(new Date('2026-05-01T00:00:00Z'));
+    });
+
+    it('un servicio que empieza en el futuro todavía no genera nada', () => {
+        expect(nextPeriodStart(
+            sub({ startDate: new Date('2026-12-01T00:00:00Z') }),
+            new Date('2026-08-24T00:00:00Z'),
+        )).toBeNull();
     });
 });
