@@ -134,13 +134,28 @@ describe('CollectionRepository — búsqueda', () => {
     it('busca por nombre de cliente y por número de factura, sin distinguir mayúsculas', async () => {
         await CollectionRepository.findAll(ORG, 0, 10, { search: 'andina' }, HOY);
 
+        const contains = { contains: 'andina', mode: 'insensitive' };
         expect(whereDe(invoiceFindMany).AND).toContainEqual({
             OR: [
-                { invoiceNumber: { contains: 'andina', mode: 'insensitive' } },
-                { contact: { name: { contains: 'andina', mode: 'insensitive' } } },
-                { contact: { email: { contains: 'andina', mode: 'insensitive' } } },
+                { invoiceNumber: contains },
+                { contact: { name: contains } },
+                { contact: { email: contains } },
+                { items: { some: { description: contains } } },
+                { subscription: { serviceName: contains } },
             ],
         });
+    });
+
+    /**
+     * El servicio es lo que se ve en la columna "Service", así que es lo primero por lo
+     * que alguien busca. Sin esto, buscar "Plan Pro" no encuentra el cobro del Plan Pro.
+     */
+    it('busca también por el servicio que se cobra', async () => {
+        await CollectionRepository.findAll(ORG, 0, 10, { search: 'plan pro' }, HOY);
+
+        const or = whereDe(invoiceFindMany).AND.find((c: Record<string, unknown>) => 'OR' in c).OR;
+        expect(or).toContainEqual({ items: { some: { description: { contains: 'plan pro', mode: 'insensitive' } } } });
+        expect(or).toContainEqual({ subscription: { serviceName: { contains: 'plan pro', mode: 'insensitive' } } });
     });
 
     /** Buscar dentro de un estado tiene que seguir funcionando: por eso todo va en AND. */

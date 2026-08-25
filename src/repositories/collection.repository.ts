@@ -70,6 +70,11 @@ function buildWhere(orgId: string, filters: CollectionFilters, today: Date) {
                 { invoiceNumber: contains },
                 { contact: { name: contains } },
                 { contact: { email: contains } },
+                // El servicio es lo que se ve en la columna "Service", así que es lo
+                // primero por lo que alguien busca. Va por la línea de detalle y por el
+                // nombre del servicio recurrente, que son sus dos orígenes posibles.
+                { items: { some: { description: contains } } },
+                { subscription: { serviceName: contains } },
             ],
         });
     }
