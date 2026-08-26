@@ -41,7 +41,7 @@ Nomenclatura de hallazgos tomada de la auditoría (A1–A8) y de la revalidació
 |----|----------|-----------|----------------|--------|
 | **V1** | `PUT /users/:id` — toma de cuenta + autoescalada a admin | Crítica | Contrato (menor) | ✅ **Corregido** (`12c973e`) |
 | **V2** | `GET /users` / `:id` — directorio global de todos los inquilinos | Alta | Contrato | ✅ **Corregido** (`d2c41a6`) |
-| **V3** | Router de organizaciones sin aislamiento (admin global opera sobre orgs ajenas) | Crítica | Contrato + backfill | ⬜ Pendiente |
+| **V3** | Router de organizaciones sin aislamiento (admin global opera sobre orgs ajenas) | Crítica | Contrato + backfill | 🔎 **Analizado, pospuesto** (§ V3) |
 | **V4** | Portal — autoemisión de shareToken sobre proyecto ajeno | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
 | **V5** | Portal — contraseña de invitado hardcodeada `DomotaiGuest` da acceso al CRM | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
 | **V6** | `client-login` autentica sólo con email y devuelve shareTokens | Crítica | Contrato | ⬜ Pendiente |
@@ -227,15 +227,83 @@ OrganizationMember aunque el email sea nuevo (V5) / deleteShare cross-org→404.
 - `cuidado`: los exploits de V4/V5 **escriben** en la base (crean User/Share).
   Recargar con `npm run seed:qa` si se ensucia.
 
-## V3 — pospuesto
+## V3 — Aislamiento del router de organizaciones (analizado, pospuesto)
 
-El aislamiento del router de organizaciones (rol admin por-organización) quedó
-**analizado pero pospuesto** por decisión explícita (2026-08-26): es el de mayor
-riesgo (cambia la semántica de `admin` de global a por-organización, necesita
-backfill y coordinación con el frontend). El análisis completo —desglose por
-endpoint, por qué `requireAdmin` mira la columna equivocada y el diseño del fix—
-está en el historial de la sesión. Retomar cuando se pueda coordinar el commit
-gemelo del frontend.
+**Decisión (2026-08-26):** analizado a fondo pero **no implementado todavía**, por
+ser el de mayor riesgo (cambia la semántica de `admin` de global a
+por-organización, requiere backfill y commit gemelo en el frontend). Se documenta
+aquí el análisis completo para retomarlo sin repetir el trabajo.
+
+### El fallo estructural
+
+El router de organizaciones es el único que **identifica el recurso por la ruta
+(`req.params`) pero no valida nada contra esa identidad**. Monta sólo
+`router.use(authenticate)` ([organization.routes.ts:10](../src/routes/organization.routes.ts)),
+nunca `requireOrgMembership`, y el guard de rol (`requireAdmin`) resuelve
+`Profile.role` **global**, no el rol en la organización del path.
+
+### Desglose por endpoint
+
+| Ruta | Guard actual | Qué permite hoy |
+|---|---|---|
+| `GET /` (index) | `authenticate` | OK — usa `findByUserId(profileId)`. |
+| `GET /:id` (show) | `authenticate` | OK — único que comprueba membresía ([controller:36-39](../src/controllers/organization.controller.ts)). |
+| `POST /` (create) | `authenticate` | Funciona, pero con dos bugs (ver abajo). |
+| `PUT /:id` (update) | `authenticate` | **IDOR** — renombra/rebrandea cualquier org por id. |
+| `DELETE /:id` (delete) | `authenticate, requireAdmin` | **Borrado cross-org** — admin de A borra la org B (requireAdmin mira rol global). |
+| `GET /:orgId/members` | `authenticate` | **Fuga** — email, teléfono, rol y `commissionRate` de cualquier org. |
+| `POST /:orgId/members` | `authenticate, requireAdmin` | **Escalada cross-org** — admin de A se añade a la org B. |
+| `PUT /:orgId/members/:userId` | `authenticate, requireAdmin` | Cambia el rol de cualquier miembro de cualquier org. |
+| `DELETE /:orgId/members/:userId` | `authenticate, requireAdmin` | Expulsa miembros de cualquier org. |
+
+### Por qué los middlewares actuales no sirven
+
+- **`requireOrgMembership` valida la _cabecera_, no el _path_.** Montado tal cual,
+  un atacante pone su org en la cabecera (pasa el check) y la org víctima en la
+  URL (lo que usa el controlador) → sigue siendo cross-org. La validación debe ir
+  contra `req.params`.
+- **`requireAdmin` resuelve `Profile.role` global** — un único valor por usuario,
+  no distingue "admin en A" de "admin en B".
+- **`requireOrgMembership` no publica el rol de la membresía**
+  ([auth.middleware.ts:132](../src/middlewares/auth.middleware.ts)) — por eso no
+  existe hoy un `requireOrgAdmin`.
+
+### El bug latente de `create` (hay que arreglarlo o V3 se rompe a sí misma)
+
+[`create`](../src/controllers/organization.controller.ts) (1) **no crea el
+`OrganizationMember` del creador** y (2) guarda `createdBy: req.userId` (un
+`User.id`) cuando la FK apunta a `Profile.id`. Hoy no molesta porque el rol es
+global; con `requireOrgAdmin` el creador quedaría **sin poder administrar su propia
+org**. El fix debe envolver `create` en `$transaction`: org +
+`OrganizationMember{ userId: profileId, role: 'admin' }` + `createdBy: profileId`.
+
+### Realidad de los datos (medido en la base viva, 2026-08-26)
+
+- 2 organizaciones; 7 membresías (2 `admin`, 4 `member`, 1 `client`).
+- **Cero admins se quedarían fuera:** todos los `Profile.role='admin'` ya tienen
+  `OrganizationMember.role='admin'` en su org → el backfill sería no-op aquí.
+- Ningún creador de org sin membresía.
+- → En esta máquina el endurecimiento es seguro; backfill + flag son red de
+  seguridad para producción.
+
+### Diseño del fix (decisiones ya tomadas con el usuario)
+
+- **Rol por-organización.** Nuevos `requireOrgMembershipFromParam(param)` (lee
+  `req.params[param]`, publica `req.orgId` + `req.orgRole`) y `requireOrgAdmin`
+  (exige `isAdminRole(req.orgRole)`), con válvula `ALLOW_GLOBAL_ADMIN_FALLBACK`
+  que deja pasar al admin global con `WARN` mientras se verifica producción.
+- **Rutas:** `PUT/DELETE /:id` y la gestión de miembros → guards por-org keyed al
+  path; `GET /:id` y `GET /:orgId/members` → `requireOrgMembershipFromParam`.
+  `GET /` y `POST /` se quedan con `authenticate` (no hay org en el path).
+- **Arreglar `create`** en `$transaction` (incluido en este trabajo).
+- **Backfill** idempotente (`OrganizationMember(admin)` por cada `Profile.role=admin`).
+
+### Frontend (commit gemelo)
+
+La UI de organizaciones/miembros debe decidir por `OrganizationMember.role`, no por
+`Profile.role`, y manejar los nuevos 403.
+
+**Retomar** cuando se pueda coordinar el commit gemelo del frontend.
 
 ## Próximos pasos sugeridos
 
