@@ -44,7 +44,7 @@ Nomenclatura de hallazgos tomada de la auditoría (A1–A8) y de la revalidació
 | **V3** | Router de organizaciones sin aislamiento (admin global opera sobre orgs ajenas) | Crítica | Contrato + backfill | 🔎 **Analizado, pospuesto** (§ V3) |
 | **V4** | Portal — autoemisión de shareToken sobre proyecto ajeno | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
 | **V5** | Portal — contraseña de invitado hardcodeada `DomotaiGuest` da acceso al CRM | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
-| **V6** | `client-login` autentica sólo con email y devuelve shareTokens | Crítica | Contrato | ⬜ Pendiente |
+| **V6** | `client-login` autentica sólo con email y devuelve shareTokens | Crítica | Contrato + SMTP | 🔎 **Analizado, pospuesto** (§ V6) |
 | **V7** | SSRF semi-ciego en `POST /monitor/:apiKey/ingest` | Alta | Aditivo | ⬜ Pendiente |
 | **IDOR-tag** | Módulo `tag` completo sin scoping por organización | Alta | Aditivo | ⬜ Pendiente |
 | **IDOR-time** | `PATCH /time-entries/:id/stop` sin orgId | Media | Aditivo | ⬜ Pendiente |
@@ -304,6 +304,45 @@ La UI de organizaciones/miembros debe decidir por `OrganizationMember.role`, no 
 `Profile.role`, y manejar los nuevos 403.
 
 **Retomar** cuando se pueda coordinar el commit gemelo del frontend.
+
+## V6 — `client-login` sin segundo factor (analizado, pospuesto: bloqueado por el canal de email)
+
+**Decisión (2026-08-26):** analizado, **no implementado**. El cierre correcto exige
+un segundo factor por correo (enlace o código), y **SMTP no está configurado en
+local** (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` vacíos en `.env`), así que no es
+implementable ni verificable de punta a punta en esta máquina. Se pospone hasta
+tener el canal de email operativo y poder coordinar el commit gemelo del frontend.
+
+### El fallo
+
+`POST /portal/client-login` ([portal.controller.ts](../src/controllers/portal.controller.ts))
+toma el email como **única credencial** y devuelve los `shareToken` en claro. El
+`shareToken` es un *bearer token*: quien conozca el email de un cliente obtiene
+acceso a todos sus proyectos. Además, email con proyectos → `200`, email sin
+proyectos → `404` = **oráculo de enumeración** de clientes. Mitigación parcial
+existente: `authLimiter` 10/15 min por IP ([app.ts:78](../src/app.ts)).
+
+### Por qué el flujo actual ES la vulnerabilidad
+
+`ClientLogin.tsx` espera una respuesta síncrona: email → lista de proyectos + tokens
+→ navegar al portal. Ese "email = token al instante" no se puede asegurar sin
+probar posesión del email, lo que requiere un canal fuera de banda (correo). Tras
+la corrección de V5, la invitación **ya manda el enlace directo del portal**, así
+que la vía canónica del cliente es ese enlace; `client-login` es una comodidad de
+"recuperar mis enlaces por email", que es justo lo que abre el agujero.
+
+### Opciones evaluadas
+
+| Opción | Cómo | Frontend | Schema | Testable local | Cierra el core |
+|---|---|---|---|---|---|
+| **A. Reenviar enlaces por email** (preferida) | `200 {sent:true}` sin tokens; reenvía los enlaces por correo | "revisa tu correo" | — | lógica sí, entrega no | ✅ |
+| **B. Código OTP 6 dígitos** | email→código, código→lista+tokens | +2º paso | tabla nueva (migración) | lógica sí, entrega no | ✅ |
+| **C. Solo matar el oráculo** | `200` también para email sin proyectos, pero sigue devolviendo tokens | — | — | ✅ end-to-end | ❌ (deja email=token) |
+
+**Recomendación cuando se retome:** opción **A** (coherente con el modelo post-V5,
+sin migración). La opción **C** queda disponible como mitigación inmediata sin tocar
+SMTP si hiciera falta reducir el riesgo antes de tener el canal de email, entendiendo
+que no cierra el fallo de fondo.
 
 ## Próximos pasos sugeridos
 
