@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { userUpdate, profileUpdateMany, validateId, validateUpd } = vi.hoisted(() => ({
+const { userUpdate, profileUpdateMany, validateId, validateUpd, userFindAll, userCount, userFindById } = vi.hoisted(() => ({
     userUpdate: vi.fn(),
     profileUpdateMany: vi.fn(),
     validateId: vi.fn(),
     validateUpd: vi.fn(),
+    userFindAll: vi.fn(),
+    userCount: vi.fn(),
+    userFindById: vi.fn(),
 }));
 
 vi.mock('../repositories/user.repository', () => ({
-    UserRepository: { update: userUpdate },
+    UserRepository: { update: userUpdate, findAll: userFindAll, count: userCount, findById: userFindById },
     AuthProvider: { EMAIL: 'EMAIL', GOOGLE: 'GOOGLE', APPLE: 'APPLE' },
 }));
 vi.mock('../config/prisma', () => ({
@@ -19,6 +22,8 @@ vi.mock('../validators/user/params.validator', () => ({
     getAuthenticatedUserId: vi.fn(),
 }));
 vi.mock('../validators/user/update.validator', () => ({ validateUpdate: validateUpd }));
+vi.mock('../validators/user/pagination.validator', () => ({ validatePagination: () => ({ page: 1, limit: 20 }) }));
+vi.mock('../validators/user/filter.validator', () => ({ validateFilters: () => ({ search: undefined }) }));
 vi.mock('../transformers/user.transformer', () => ({
     transformUser: (u: unknown) => u,
     transformUsers: (u: unknown) => u,
@@ -92,5 +97,35 @@ describe('UserController.update — guard anti-escalada de rol', () => {
         // Se actualiza el perfil (fullName) pero nunca escalando el rol.
         const call = profileUpdateMany.mock.calls[0]?.[0];
         expect(call?.data?.role ?? 'client').toBe('client');
+    });
+});
+
+/**
+ * V2: index y show devolvían/consultaban usuarios de cualquier organización.
+ */
+describe('UserController.index / show — aislamiento por organización', () => {
+    it('index pasa req.orgId como filtro de organización al repositorio', async () => {
+        userFindAll.mockResolvedValue([]);
+        userCount.mockResolvedValue(0);
+        const res = fakeRes();
+
+        await UserController.index(fakeReq({ orgId: 'org-A', userId: 'u1', user: { profileId: 'u1', role: 'admin' } }), res);
+
+        expect(userFindAll).toHaveBeenCalledWith(
+            expect.any(Number), expect.any(Number),
+            expect.objectContaining({ organizationId: 'org-A' }),
+        );
+        expect(userCount).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-A' }));
+    });
+
+    it('show devuelve 404 cuando el usuario no es miembro de la organización', async () => {
+        validateId.mockReturnValue({ id: 'ajeno' });
+        userFindById.mockResolvedValue(null); // el repo, acotado por org, no lo encuentra
+        const res = fakeRes();
+
+        await UserController.show(fakeReq({ params: { id: 'ajeno' }, orgId: 'org-A' }), res);
+
+        expect(userFindById).toHaveBeenCalledWith('ajeno', 'org-A');
+        expect(res.status).toHaveBeenCalledWith(404);
     });
 });

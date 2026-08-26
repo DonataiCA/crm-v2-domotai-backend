@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
-import { authenticate, requireAdmin, requireSelfOrAdmin } from '../middlewares/auth.middleware';
+import { authenticate, requireAdmin, requireSelfOrAdmin, requireOrgMembership } from '../middlewares/auth.middleware';
 
 const router = Router();
 
@@ -14,10 +14,10 @@ router.post('/logout', authenticate, UserController.logout);
 // User routes
 router.post('/admin-create', authenticate, requireAdmin, UserController.adminCreate);
 router.post('/', authenticate, requireAdmin, UserController.register);
-router.get('/', authenticate, UserController.index);
+router.get('/', authenticate, requireOrgMembership, UserController.index);
 router.get('/profile', authenticate, UserController.profile);
 router.put('/change-password', authenticate, UserController.changePassword);
-router.get('/:id', authenticate, UserController.show);
+router.get('/:id', authenticate, requireOrgMembership, UserController.show);
 router.put('/:id', authenticate, requireSelfOrAdmin, UserController.update);
 router.delete('/:id', authenticate, requireAdmin, UserController.delete);
 

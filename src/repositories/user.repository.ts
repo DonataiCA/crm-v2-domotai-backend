@@ -49,13 +49,27 @@ export const UserRepository = {
         return prisma.user.create({ data: createData });
     },
 
-    findById: (id: string) => prisma.user.findUnique({
-        where: { id },
-        include: { profile: true },
-    }),
+    findById: (id: string, organizationId?: string) => {
+        // Con organizationId, sólo devuelve el usuario si su perfil es miembro de
+        // esa organización (V2: `GET /users/:id` no debe cruzar inquilinos).
+        if (organizationId) {
+            return prisma.user.findFirst({
+                where: { id, profile: { organizationMembers: { some: { organizationId } } } },
+                include: { profile: true },
+            });
+        }
+        return prisma.user.findUnique({
+            where: { id },
+            include: { profile: true },
+        });
+    },
 
-    findAll: (skip: number, take: number, filters?: { search?: string }) => {
+    findAll: (skip: number, take: number, filters?: { search?: string; organizationId?: string }) => {
         const where: Record<string, unknown> = {};
+
+        if (filters?.organizationId) {
+            where.profile = { organizationMembers: { some: { organizationId: filters.organizationId } } };
+        }
 
         if (filters?.search) {
             where.OR = [
@@ -86,8 +100,12 @@ export const UserRepository = {
         });
     },
 
-    count: (filters?: { search?: string }) => {
+    count: (filters?: { search?: string; organizationId?: string }) => {
         const where: Record<string, unknown> = {};
+
+        if (filters?.organizationId) {
+            where.profile = { organizationMembers: { some: { organizationId: filters.organizationId } } };
+        }
 
         if (filters?.search) {
             where.OR = [

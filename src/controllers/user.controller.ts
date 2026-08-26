@@ -37,9 +37,10 @@ export const UserController = {
             const { search } = validateFilters(req);
             const skip = (page - 1) * limit;
 
+            const orgId = (req as any).orgId as string;
             const [users, total] = await Promise.all([
-                UserRepository.findAll(skip, limit, { search }),
-                UserRepository.count({ search })
+                UserRepository.findAll(skip, limit, { search, organizationId: orgId }),
+                UserRepository.count({ search, organizationId: orgId })
             ]);
 
             res.json({
@@ -59,7 +60,8 @@ export const UserController = {
     show: async (req: Request, res: Response) => {
         try {
             const { id } = validateIdParam(req);
-            const user = await UserRepository.findById(id);
+            const orgId = (req as any).orgId as string;
+            const user = await UserRepository.findById(id, orgId);
             if (!user) return sendError(res, 404, 'User not found');
             res.json(transformUserWithRelations(user));
         } catch (error) {
