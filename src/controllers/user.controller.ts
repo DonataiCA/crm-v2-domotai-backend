@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { sendError } from '../utils/error';
 import bcrypt from 'bcryptjs';
 import { UserRepository, AuthProvider } from '../repositories/user.repository';
+import { prisma } from '../config/prisma';
 import { generateToken } from '../utils/jwt';
 import crypto from 'crypto';
 import { JwtRepository } from '../repositories/jwt.repository';
@@ -68,7 +69,6 @@ export const UserController = {
 
     update: async (req: Request, res: Response) => {
         try {
-            const { prisma } = require('../config/prisma');
             const { id } = validateIdParam(req);
             const validatedData = validateUpdate(req);
 
@@ -101,7 +101,17 @@ export const UserController = {
             const profileData: any = {};
             if (validatedData.fullName) profileData.fullName = validatedData.fullName;
             if (validatedData.phone !== undefined) profileData.phone = validatedData.phone;
-            if (validatedData.role) profileData.role = validatedData.role;
+            // V1: sólo un admin puede cambiar el rol. Un no-admin únicamente
+            // puede reenviar su rol actual (no-op); intentar escalar es 403.
+            if (validatedData.role !== undefined) {
+                const requestedRole = normalizeRole(validatedData.role);
+                const requesterRole = (req as any).user?.role as string | undefined;
+                if (isAdminRole(requesterRole)) {
+                    profileData.role = requestedRole;
+                } else if (requestedRole !== requesterRole) {
+                    return sendError(res, 403, 'Only an admin can change a user role.');
+                }
+            }
             if (validatedData.email) profileData.email = validatedData.email.trim().toLowerCase();
 
             if (Object.keys(profileData).length > 0) {
@@ -129,7 +139,6 @@ export const UserController = {
 
     adminCreate: async (req: Request, res: Response) => {
         try {
-            const { prisma } = require('../config/prisma');
             const orgId = req.headers['x-organization-id'] as string;
             if (!orgId) return sendError(res, 400, 'X-Organization-Id header is required');
 
@@ -276,8 +285,7 @@ export const UserController = {
 
             // Also update shouldChangePassword flag if it exists on profile
             try {
-                const { prisma } = require('../config/prisma');
-                await prisma.profile.updateMany({
+                    await prisma.profile.updateMany({
                     where: { userId },
                     data: { shouldChangePassword: false },
                 });

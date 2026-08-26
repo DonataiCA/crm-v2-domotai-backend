@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
-import { authenticate, requireAdmin } from '../middlewares/auth.middleware';
+import { authenticate, requireAdmin, requireSelfOrAdmin } from '../middlewares/auth.middleware';
 
 const router = Router();
 
@@ -18,7 +18,7 @@ router.get('/', authenticate, UserController.index);
 router.get('/profile', authenticate, UserController.profile);
 router.put('/change-password', authenticate, UserController.changePassword);
 router.get('/:id', authenticate, UserController.show);
-router.put('/:id', authenticate, UserController.update);
+router.put('/:id', authenticate, requireSelfOrAdmin, UserController.update);
 router.delete('/:id', authenticate, requireAdmin, UserController.delete);
 
 export default router;
