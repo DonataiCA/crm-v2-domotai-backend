@@ -42,8 +42,8 @@ Nomenclatura de hallazgos tomada de la auditoría (A1–A8) y de la revalidació
 | **V1** | `PUT /users/:id` — toma de cuenta + autoescalada a admin | Crítica | Contrato (menor) | ✅ **Corregido** (`12c973e`) |
 | **V2** | `GET /users` / `:id` — directorio global de todos los inquilinos | Alta | Contrato | ✅ **Corregido** (`d2c41a6`) |
 | **V3** | Router de organizaciones sin aislamiento (admin global opera sobre orgs ajenas) | Crítica | Contrato + backfill | ⬜ Pendiente |
-| **V4** | Portal — autoemisión de shareToken sobre proyecto ajeno | Crítica | Contrato | ⬜ Pendiente |
-| **V5** | Portal — contraseña de invitado hardcodeada `DomotaiGuest` da acceso al CRM | Crítica | Contrato | ⬜ Pendiente |
+| **V4** | Portal — autoemisión de shareToken sobre proyecto ajeno | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
+| **V5** | Portal — contraseña de invitado hardcodeada `DomotaiGuest` da acceso al CRM | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
 | **V6** | `client-login` autentica sólo con email y devuelve shareTokens | Crítica | Contrato | ⬜ Pendiente |
 | **V7** | SSRF semi-ciego en `POST /monitor/:apiKey/ingest` | Alta | Aditivo | ⬜ Pendiente |
 | **IDOR-tag** | Módulo `tag` completo sin scoping por organización | Alta | Aditivo | ⬜ Pendiente |
@@ -159,6 +159,61 @@ UUIDs que hacía práctica la toma de cuentas de V1.
 `X-Organization-Id`, así que las llamadas normales siguen funcionando; verificar
 cualquier uso de `GET /users` que asumiera alcance global o no enviara la cabecera.
 
+### V4 + V5 — Portal: autoemisión de shares y cuenta invitado hardcodeada ✅
+
+- **Commit:** `c09b935` (rama `fix/idor-put-users-role-escalation`)
+- **Fecha:** 2026-08-26
+
+**Los fallos.** Las 3 rutas de share del portal
+([portal.routes.ts:17-19](../src/routes/portal.routes.ts)) se montaban sólo con
+`authenticate`:
+- **V4** — `shareProject` no validaba que el `projectId` fuera de la organización
+  (tomaba el `organizationId` de la cabecera cruda) → cualquiera emitía un share
+  sobre un proyecto ajeno. `deleteShare` revocaba por id **sin filtro** (share de
+  cualquier org). `getShares` filtraba por una cabecera no validada.
+- **V5** — dentro de `shareProject`, si el email no existía se autocreaba un
+  `User`+`Profile`+`OrganizationMember` con la contraseña fija `'DomotaiGuest'`,
+  que permitía `POST /users/login` al CRM completo (facturas, leads, CSVs) y de
+  ahí escalar vía V1.
+
+**El fix.**
+- Las 3 rutas pasan a `authenticate, requireOrgMembership, ...` (publican
+  `req.orgId` validado).
+- `shareProject` ([portal.controller.ts](../src/controllers/portal.controller.ts)):
+  exige `project.findFirst({ id: projectId, organizationId: req.orgId })` → 404 si
+  no es de la org; usa `req.orgId`; `createdBy` pasa a `req.user.profileId`
+  (convención #1, la FK apunta a `Profile.id`).
+- **Se elimina el bloque de autocreación de cuenta** (V5). El cliente accede por
+  el `shareToken` (el portal es público por enlace: `viewPortal`,
+  `addGuestComment`, `createGuestTask`, `updateGuestTask` no requieren cuenta). El
+  email de invitación (`sendClientInvitation`) deja de mandar credenciales y manda
+  el **enlace de share**; se quita el import de `bcrypt`, ya sin uso.
+- `getShares` usa `req.orgId`. `deleteShare` → `updateMany({ id, organizationId:
+  req.orgId, revokedAt: null })`, `count===0` → 404.
+
+**Datos:** 0 cuentas invitado en la base (nada que migrar). `sendOrgInvitation`
+(invitación de equipo, que sí crea cuenta legítima) queda intacto.
+
+**Tests (nuevos):** `src/controllers/portal.controller.test.ts` — share
+cross-org→404 sin crear el registro / share propio→201 / no se crea User ni
+OrganizationMember aunque el email sea nuevo (V5) / deleteShare cross-org→404.
+
+**Verificación end-to-end** (dos orgs QA):
+
+| Caso | Resultado |
+|------|-----------|
+| share sobre proyecto de mi org | **201**, `shareUrl` sin credenciales |
+| share sobre proyecto de otra org (cabecera de la mía) | **404** |
+| login con `DomotaiGuest` del email recién invitado | **401** (no hay cuenta) |
+| acceso al portal por el enlace, sin login | **200** |
+| deleteShare propio / repetido | **204** / **404** |
+| share sin `X-Organization-Id` | **400** |
+| cuentas invitado creadas en BD | **0** |
+
+**Frontend (pendiente, commit gemelo):** la pantalla de invitación pasa de
+"credenciales" a "enviamos un enlace"; el cliente deja de entrar por
+`/users/login`. Las llamadas de share ya mandan `X-Organization-Id`.
+
 ---
 
 ## Notas de entorno (para reproducir/verificar)
@@ -171,6 +226,16 @@ cualquier uso de `GET /users` que asumiera alcance global o no enviara la cabece
   vez** y reutilizarlo, no sondear el login.
 - `cuidado`: los exploits de V4/V5 **escriben** en la base (crean User/Share).
   Recargar con `npm run seed:qa` si se ensucia.
+
+## V3 — pospuesto
+
+El aislamiento del router de organizaciones (rol admin por-organización) quedó
+**analizado pero pospuesto** por decisión explícita (2026-08-26): es el de mayor
+riesgo (cambia la semántica de `admin` de global a por-organización, necesita
+backfill y coordinación con el frontend). El análisis completo —desglose por
+endpoint, por qué `requireAdmin` mira la columna equivocada y el diseño del fix—
+está en el historial de la sesión. Retomar cuando se pueda coordinar el commit
+gemelo del frontend.
 
 ## Próximos pasos sugeridos
 
