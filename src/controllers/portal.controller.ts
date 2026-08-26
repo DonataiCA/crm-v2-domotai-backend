@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { sendError } from '../utils/error';
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import { emailService } from '../utils/email';
 import { logAudit } from '../utils/audit';
 import { DEFAULT_SHARE_PERMISSIONS } from '../constants/enums';
@@ -86,12 +85,8 @@ export const PortalController = {
     shareProject: async (req: Request, res: Response) => {
         try {
             const { projectId } = req.params;
-            const organizationId = req.headers['x-organization-id'] as string;
-            const userId = (req as any).userId as string | undefined;
-
-            if (!organizationId) {
-                return sendError(res, 400, 'Organization ID header is required');
-            }
+            const orgId = (req as any).orgId as string;
+            const profileId = (req as any).user?.profileId as string | undefined;
 
             const { clientEmail, clientName, permissions, expiresAt } = req.body;
 
@@ -99,78 +94,44 @@ export const PortalController = {
                 return sendError(res, 400, 'Client email is required');
             }
 
+            // V4: el proyecto debe pertenecer a la organización del solicitante.
+            const project = await prisma.project.findFirst({
+                where: { id: projectId, organizationId: orgId },
+                select: { id: true, name: true },
+            });
+            if (!project) {
+                return sendError(res, 404, 'Project not found');
+            }
+
             const normalizedEmail = clientEmail.trim().toLowerCase();
             const shareToken = crypto.randomUUID();
 
-            // ── Auto-create client user if they don't exist ─────────────────
-            let existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-
-            if (!existingUser) {
-                const hashedPassword = bcrypt.hashSync('DomotaiGuest', 10);
-                const nameParts = (clientName || normalizedEmail.split('@')[0]).split(' ');
-                const firstName = nameParts[0] || 'Guest';
-                const lastName = nameParts.slice(1).join(' ') || 'Client';
-
-                existingUser = await prisma.user.create({
-                    data: {
-                        email: normalizedEmail,
-                        firstName,
-                        lastName,
-                        password: hashedPassword,
-                        phoneNumber: `+guest${Date.now()}${Math.floor(Math.random() * 1000)}`,
-                        gender: 'unspecified',
-                        authProvider: 'EMAIL',
-                        role: 'USER',
-                    },
-                });
-
-                await prisma.profile.create({
-                    data: {
-                        id: existingUser.id,
-                        email: normalizedEmail,
-                        fullName: clientName || `${firstName} ${lastName}`,
-                        role: 'client',
-                        shouldChangePassword: true,
-                        currentOrganizationId: organizationId,
-                        userId: existingUser.id,
-                    },
-                });
-
-                await prisma.organizationMember.create({
-                    data: {
-                        organizationId,
-                        userId: existingUser.id,
-                        role: 'client',
-                    },
-                });
-            }
-
-            // ── Create the share ────────────────────────────────────────────
+            // V5: NO se crea cuenta de usuario. El cliente accede por el enlace de
+            // share (shareToken), no por credenciales, así que ninguna invitación
+            // abre una sesión al CRM.
             const share = await prisma.projectShare.create({
                 data: {
                     projectId,
-                    organizationId,
+                    organizationId: orgId,
                     shareToken,
                     clientEmail: normalizedEmail,
                     clientName: clientName || null,
                     permissions: permissions || DEFAULT_SHARE_PERMISSIONS,
                     expiresAt: expiresAt ? new Date(expiresAt) : null,
-                    createdBy: userId || null,
+                    createdBy: profileId || null,
                 },
             });
 
-            // Send invitation email (fire and forget)
-            const project = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
-            const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
-            const loginUrl = `${req.protocol}://${req.get('host')?.replace(':3000', ':8080')}/auth`;
+            // Email de invitación con el enlace de share (fire and forget).
+            const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } });
+            const shareUrl = `${req.protocol}://${req.get('host')?.replace(':3000', ':8080')}/portal/${shareToken}`;
             const perms = (permissions || DEFAULT_SHARE_PERMISSIONS).split(',');
             emailService.sendClientInvitation(
                 normalizedEmail,
                 clientName || 'Client',
-                project?.name || 'Project',
+                project.name || 'Project',
                 org?.name || 'Domotai',
-                loginUrl,
-                'DomotaiGuest',
+                shareUrl,
                 perms,
             );
 
@@ -184,7 +145,7 @@ export const PortalController = {
                 createdAt: share.createdAt,
                 shareUrl: `/portal/${share.shareToken}`,
             });
-            await logAudit(req, { action: 'SHARE', entityType: 'Project', entityId: projectId, entityName: project?.name, details: `Shared with ${normalizedEmail}` });
+            await logAudit(req, { action: 'SHARE', entityType: 'Project', entityId: projectId, entityName: project.name, details: `Shared with ${normalizedEmail}` });
             return;
         } catch (error) {
             return sendError(res, 500, 'Failed to share project', error);
@@ -198,16 +159,12 @@ export const PortalController = {
     getShares: async (req: Request, res: Response) => {
         try {
             const { projectId } = req.params;
-            const organizationId = req.headers['x-organization-id'] as string;
-
-            if (!organizationId) {
-                return sendError(res, 400, 'Organization ID header is required');
-            }
+            const orgId = (req as any).orgId as string;
 
             const shares = await prisma.projectShare.findMany({
                 where: {
                     projectId,
-                    organizationId,
+                    organizationId: orgId,
                     revokedAt: null,
                 },
                 include: {
@@ -235,11 +192,15 @@ export const PortalController = {
     deleteShare: async (req: Request, res: Response) => {
         try {
             const { shareId } = req.params;
+            const orgId = (req as any).orgId as string;
 
-            await prisma.projectShare.update({
-                where: { id: shareId },
+            const result = await prisma.projectShare.updateMany({
+                where: { id: shareId, organizationId: orgId, revokedAt: null },
                 data: { revokedAt: new Date() },
             });
+            if (result.count === 0) {
+                return sendError(res, 404, 'Share not found');
+            }
 
             return res.sendStatus(204);
         } catch (error) {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PortalController } from '../controllers/portal.controller';
-import { authenticate } from '../middlewares/auth.middleware';
+import { authenticate, requireOrgMembership } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import { clientLoginSchema, shareProjectSchema } from '../validators/portal.validator';
 
@@ -14,8 +14,8 @@ router.post('/:shareToken/tasks', PortalController.createGuestTask);
 router.patch('/:shareToken/tasks/:taskId', PortalController.updateGuestTask);
 
 // ─── AUTHENTICATED ROUTES ───────────────────────────────────────────────────
-router.post('/projects/:projectId/share', authenticate, validate(shareProjectSchema), PortalController.shareProject);
-router.get('/projects/:projectId/shares', authenticate, PortalController.getShares);
-router.delete('/projects/shares/:shareId', authenticate, PortalController.deleteShare);
+router.post('/projects/:projectId/share', authenticate, requireOrgMembership, validate(shareProjectSchema), PortalController.shareProject);
+router.get('/projects/:projectId/shares', authenticate, requireOrgMembership, PortalController.getShares);
+router.delete('/projects/shares/:shareId', authenticate, requireOrgMembership, PortalController.deleteShare);
 
 export default router;
