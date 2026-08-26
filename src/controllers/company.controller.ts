@@ -101,6 +101,9 @@ export const CompanyController = {
             const { title, url, fileType } = req.body;
             if (!title || !url) return sendError(res, 400, 'title and url are required');
 
+            const company = await prisma.company.findFirst({ where: { id: companyId, organizationId: (req as any).orgId }, select: { id: true } });
+            if (!company) return sendError(res, 404, 'Company not found');
+
             const fileLink = await prisma.fileLink.create({
                 data: { companyId, title, url, fileType, createdBy: userId },
                 include: { creator: { select: { id: true, fullName: true, email: true } } },
@@ -113,7 +116,8 @@ export const CompanyController = {
 
     deleteFileLink: async (req: Request, res: Response) => {
         try {
-            await prisma.fileLink.delete({ where: { id: req.params.fileId } });
+            const result = await prisma.fileLink.deleteMany({ where: { id: req.params.fileId, company: { organizationId: (req as any).orgId } } });
+            if (result.count === 0) return sendError(res, 404, 'File link not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete file link', error);
