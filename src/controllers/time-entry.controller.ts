@@ -98,7 +98,7 @@ export const TimeEntryController = {
 
     stop: async (req: Request, res: Response) => {
         try {
-            const entry = await TimeEntryRepository.stopTimer(req.params.id);
+            const entry = await TimeEntryRepository.stopTimer(req.params.id, (req as any).orgId);
             if (!entry) return sendError(res, 404, 'Time entry not found or has no start time');
 
             res.json(entry);

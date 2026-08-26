@@ -183,8 +183,8 @@ export const DashboardController = {
 
     weeklyDigest: async (req: Request, res: Response) => {
         try {
-            // Get first org (single-tenant)
-            const org = await prisma.organization.findFirst({ select: { id: true, name: true } });
+            const orgId = (req as any).orgId as string;
+            const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true, name: true } });
             if (!org) return sendError(res, 404, 'No organization found');
 
             const oneWeekAgo = new Date();

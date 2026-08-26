@@ -47,8 +47,8 @@ export const CapacityController = {
                     const profileId = member.profile.id;
 
                     const [openTaskCount, overdueTaskCount, loggedHoursWeek, activeProjectCount] = await Promise.all([
-                        CapacityRepository.countOpenTasks(profileId),
-                        CapacityRepository.countOverdueTasks(profileId, now),
+                        CapacityRepository.countOpenTasks(profileId, orgId),
+                        CapacityRepository.countOverdueTasks(profileId, orgId, now),
                         CapacityRepository.sumLoggedHours(profileId, orgId, weekStart, weekEnd),
                         CapacityRepository.countActiveProjects(profileId, orgId),
                     ]);

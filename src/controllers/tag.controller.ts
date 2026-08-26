@@ -6,8 +6,7 @@ export const TagController = {
     // List all tags for the organization
     index: async (req: Request, res: Response) => {
         try {
-            const orgId = req.headers['x-organization-id'] as string;
-            if (!orgId) return sendError(res, 400, 'X-Organization-Id header is required');
+            const orgId = (req as any).orgId as string;
 
             const tags = await prisma.tag.findMany({
                 where: { organizationId: orgId },
@@ -27,8 +26,7 @@ export const TagController = {
     // Create a new tag
     create: async (req: Request, res: Response) => {
         try {
-            const orgId = req.headers['x-organization-id'] as string;
-            if (!orgId) return sendError(res, 400, 'X-Organization-Id header is required');
+            const orgId = (req as any).orgId as string;
 
             const userId = (req as any).user?.profileId;
             const { name, color } = req.body;
@@ -66,8 +64,7 @@ export const TagController = {
     // Update a tag
     update: async (req: Request, res: Response) => {
         try {
-            const orgId = req.headers['x-organization-id'] as string;
-            if (!orgId) return sendError(res, 400, 'X-Organization-Id header is required');
+            const orgId = (req as any).orgId as string;
 
             const { tagId } = req.params;
             const { name, color } = req.body;
@@ -86,15 +83,19 @@ export const TagController = {
                 data.nameLower = nameLower;
             }
 
-            const tag = await prisma.tag.update({
-                where: { id: tagId },
+            const result = await prisma.tag.updateMany({
+                where: { id: tagId, organizationId: orgId },
                 data,
+            });
+            if (result.count === 0) return sendError(res, 404, 'Tag not found');
+
+            const tag = await prisma.tag.findFirst({
+                where: { id: tagId, organizationId: orgId },
                 include: {
                     creator: { select: { id: true, fullName: true, email: true } },
                     _count: { select: { taskTags: true } },
                 },
             });
-
             res.json(tag);
         } catch (error) {
             return sendError(res, 500, 'Failed to update tag', error);
@@ -104,8 +105,10 @@ export const TagController = {
     // Delete a tag
     delete: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId as string;
             const { tagId } = req.params;
-            await prisma.tag.delete({ where: { id: tagId } });
+            const result = await prisma.tag.deleteMany({ where: { id: tagId, organizationId: orgId } });
+            if (result.count === 0) return sendError(res, 404, 'Tag not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete tag', error);
@@ -115,7 +118,13 @@ export const TagController = {
     // Assign tag to a project task
     assignToTask: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId as string;
             const { taskId, tagId } = req.params;
+
+            const task = await prisma.projectTask.findFirst({ where: { id: taskId, organizationId: orgId }, select: { id: true } });
+            if (!task) return sendError(res, 404, 'Task not found');
+            const tag = await prisma.tag.findFirst({ where: { id: tagId, organizationId: orgId }, select: { id: true } });
+            if (!tag) return sendError(res, 404, 'Tag not found');
 
             await prisma.projectTaskTag.create({
                 data: { projectTaskId: taskId, tagId },
@@ -133,7 +142,11 @@ export const TagController = {
     // Remove tag from a project task
     removeFromTask: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId as string;
             const { taskId, tagId } = req.params;
+
+            const task = await prisma.projectTask.findFirst({ where: { id: taskId, organizationId: orgId }, select: { id: true } });
+            if (!task) return sendError(res, 404, 'Task not found');
 
             await prisma.projectTaskTag.delete({
                 where: { projectTaskId_tagId: { projectTaskId: taskId, tagId } },
@@ -151,10 +164,19 @@ export const TagController = {
     // Set all tags for a project task (replaces existing)
     setTaskTags: async (req: Request, res: Response) => {
         try {
+            const orgId = (req as any).orgId as string;
             const { taskId } = req.params;
             const { tagIds } = req.body;
 
             if (!Array.isArray(tagIds)) return sendError(res, 400, 'tagIds must be an array');
+
+            const ownTask = await prisma.projectTask.findFirst({ where: { id: taskId, organizationId: orgId }, select: { id: true } });
+            if (!ownTask) return sendError(res, 404, 'Task not found');
+
+            if (tagIds.length > 0) {
+                const owned = await prisma.tag.findMany({ where: { id: { in: tagIds }, organizationId: orgId }, select: { id: true } });
+                if (owned.length !== tagIds.length) return sendError(res, 400, 'One or more tags do not belong to this organization');
+            }
 
             // Delete all existing and re-create
             await prisma.$transaction([

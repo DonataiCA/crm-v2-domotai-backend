@@ -139,8 +139,7 @@ export const emailService = {
         clientName: string,
         projectName: string,
         organizationName: string,
-        loginUrl: string,
-        tempPassword: string,
+        shareUrl: string,
         permissions: string[],
     ) => {
         const permLabels: Record<string, string> = {
@@ -165,13 +164,10 @@ export const emailService = {
             ${infoBox(`<p style="margin:0;color:${DARK};font-size:18px;font-weight:700;">${projectName}</p>`, ORANGE)}
             <p style="color:${GRAY_TEXT};line-height:1.7;font-size:14px;font-weight:600;">What you can do:</p>
             <ul style="margin:0 0 16px;padding-left:20px;">${permList}</ul>
-            ${credentialsBox(to, tempPassword)}
-            ${button('Login to Domotai', loginUrl)}
-            <div style="background:#fef3c7;border-radius:8px;padding:12px 16px;margin-top:8px;">
-              <p style="color:#92400e;font-size:13px;margin:0;">
-                <strong>Important:</strong> You will be asked to change your password on your first login.
-              </p>
-            </div>`,
+            ${button('View project', shareUrl)}
+            <p style="color:${GRAY_TEXT};line-height:1.7;font-size:13px;margin-top:8px;">
+              This is your private access link — no account or password required. Keep it to yourself.
+            </p>`,
         );
         return sendEmail(to, `You're invited to "${projectName}" — ${organizationName}`, html);
     },

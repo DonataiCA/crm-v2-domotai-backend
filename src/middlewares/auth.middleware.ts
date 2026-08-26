@@ -94,6 +94,23 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
 };
 
 /**
+ * Permite la operación sólo si el solicitante es el dueño del recurso
+ * (`req.params.id === req.userId`, ambos User.id) o tiene rol admin.
+ * Debe ir DESPUÉS de `authenticate`. Cierra V1: `PUT /users/:id` dejaba que
+ * cualquier autenticado editara —y escalara— cualquier cuenta.
+ */
+export const requireSelfOrAdmin = (req: Request, res: Response, next: NextFunction) => {
+    const targetId = req.params.id;
+    const requesterId = (req as any).userId as string | undefined;
+    const requesterRole = (req as any).user?.role as string | undefined;
+
+    if (requesterId && targetId === requesterId) return next();
+    if (isAdminRole(requesterRole)) return next();
+
+    return sendError(res, 403, 'Access denied. You can only modify your own account.');
+};
+
+/**
  * Middleware that verifies the authenticated user is a member of the
  * organization specified in the X-Organization-Id header.
  * Must be placed AFTER `authenticate`.

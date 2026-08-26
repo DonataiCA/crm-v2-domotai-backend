@@ -157,8 +157,8 @@ export const LeadRepository = {
             include: { creator: userRefSelect },
         }),
 
-    deleteEvent: (id: string) =>
-        prisma.leadEvent.delete({ where: { id } }),
+    deleteEvent: (id: string, organizationId?: string) =>
+        prisma.leadEvent.deleteMany({ where: { id, ...(organizationId ? { organizationId } : {}) } }),
 
     convert: (leadId: string, projectId: string) =>
         prisma.lead.update({

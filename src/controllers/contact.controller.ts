@@ -192,7 +192,8 @@ export const ContactController = {
 
     deleteNote: async (req: Request, res: Response) => {
         try {
-            await ContactRepository.deleteNote(req.params.noteId);
+            const result = await ContactRepository.deleteNote(req.params.noteId, (req as any).orgId);
+            if (result.count === 0) return sendError(res, 404, 'Note not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete note', error);
@@ -225,7 +226,8 @@ export const ContactController = {
 
     deleteFileLink: async (req: Request, res: Response) => {
         try {
-            await ContactRepository.deleteFileLink(req.params.fileId);
+            const result = await ContactRepository.deleteFileLink(req.params.fileId, (req as any).orgId);
+            if (result.count === 0) return sendError(res, 404, 'File link not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete file link', error);

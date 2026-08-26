@@ -114,8 +114,10 @@ export const TimeEntryRepository = {
         return renameProfileToUser(entry);
     },
 
-    stopTimer: async (id: string) => {
-        const existing = await prisma.timeEntry.findUnique({ where: { id } });
+    stopTimer: async (id: string, organizationId?: string) => {
+        const existing = organizationId
+            ? await prisma.timeEntry.findFirst({ where: { id, organizationId } })
+            : await prisma.timeEntry.findUnique({ where: { id } });
         if (!existing) return null;
         if (!existing.startTime) return null;
 
@@ -124,11 +126,17 @@ export const TimeEntryRepository = {
             (endTime.getTime() - new Date(existing.startTime).getTime()) / 60000,
         );
 
-        const entry = await prisma.timeEntry.update({
-            where: { id },
+        // Escritura acotada por la misma organización (evita TOCTOU).
+        const result = await prisma.timeEntry.updateMany({
+            where: { id, ...(organizationId ? { organizationId } : {}) },
             data: { endTime, durationMinutes },
+        });
+        if (result.count === 0) return null;
+
+        const entry = await prisma.timeEntry.findFirst({
+            where: { id },
             include: timeEntryIncludes,
         });
-        return renameProfileToUser(entry);
+        return entry ? renameProfileToUser(entry) : null;
     },
 };

@@ -219,7 +219,8 @@ export const LeadController = {
 
     deleteEvent: async (req: Request, res: Response) => {
         try {
-            await LeadRepository.deleteEvent(req.params.eventId);
+            const result = await LeadRepository.deleteEvent(req.params.eventId, (req as any).orgId);
+            if (result.count === 0) return sendError(res, 404, 'Event not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete event', error);
@@ -237,6 +238,9 @@ export const LeadController = {
             const existing = await LeadRepository.findById(leadId, orgId);
             if (!existing) return sendError(res, 404, 'Lead not found');
 
+            const project = await prisma.project.findFirst({ where: { id: projectId, organizationId: orgId }, select: { id: true } });
+            if (!project) return sendError(res, 404, 'Project not found');
+
             const lead = await LeadRepository.convert(leadId, projectId);
             res.json(lead);
             await logAudit(req, { action: 'CONVERT', entityType: 'Lead', entityId: lead.id, entityName: lead.name ?? lead.contact?.email ?? undefined, details: `Converted to project ${projectId}` });
@@ -252,6 +256,9 @@ export const LeadController = {
             const { title, url, fileType } = req.body;
             if (!title || !url) return sendError(res, 400, 'title and url are required');
 
+            const lead = await prisma.lead.findFirst({ where: { id: leadId, organizationId: (req as any).orgId }, select: { id: true } });
+            if (!lead) return sendError(res, 404, 'Lead not found');
+
             const fileLink = await prisma.fileLink.create({
                 data: { leadId, title, url, fileType, createdBy: userId },
                 include: { creator: { select: { id: true, fullName: true, email: true } } },
@@ -264,7 +271,8 @@ export const LeadController = {
 
     deleteFileLink: async (req: Request, res: Response) => {
         try {
-            await prisma.fileLink.delete({ where: { id: req.params.fileId } });
+            const result = await prisma.fileLink.deleteMany({ where: { id: req.params.fileId, lead: { organizationId: (req as any).orgId } } });
+            if (result.count === 0) return sendError(res, 404, 'File link not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to delete file link', error);
@@ -287,7 +295,8 @@ export const LeadController = {
 
     restore: async (req: Request, res: Response) => {
         try {
-            await LeadRepository.restore(req.params.id);
+            const restored = await LeadRepository.restore(req.params.id, (req as any).orgId);
+            if (!restored) return sendError(res, 404, 'Lead not found');
             res.sendStatus(204);
         } catch (error) {
             return sendError(res, 500, 'Failed to restore lead', error);

@@ -30,17 +30,19 @@ export const CapacityRepository = {
     /**
      * Count assigned tasks (both ProjectTask and Task models) that are NOT completed.
      */
-    countOpenTasks: async (profileId: string): Promise<number> => {
+    countOpenTasks: async (profileId: string, organizationId: string): Promise<number> => {
         const [projectCount, taskCount] = await Promise.all([
             prisma.projectTask.count({
                 where: {
                     assignedTo: profileId,
+                    organizationId,
                     status: { not: 'COMPLETED' },
                 },
             }),
             prisma.task.count({
                 where: {
                     assignedTo: profileId,
+                    organizationId,
                     status: { not: 'COMPLETED' },
                 },
             }),
@@ -51,11 +53,12 @@ export const CapacityRepository = {
     /**
      * Count overdue tasks: dueDate in the past AND status not completed.
      */
-    countOverdueTasks: async (profileId: string, now: Date): Promise<number> => {
+    countOverdueTasks: async (profileId: string, organizationId: string, now: Date): Promise<number> => {
         const [projectCount, taskCount] = await Promise.all([
             prisma.projectTask.count({
                 where: {
                     assignedTo: profileId,
+                    organizationId,
                     status: { not: 'COMPLETED' },
                     dueDate: { lt: now },
                 },
@@ -63,6 +66,7 @@ export const CapacityRepository = {
             prisma.task.count({
                 where: {
                     assignedTo: profileId,
+                    organizationId,
                     status: { not: 'COMPLETED' },
                     dueDate: { lt: now },
                 },

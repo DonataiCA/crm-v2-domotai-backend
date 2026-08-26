@@ -151,8 +151,8 @@ export const ContactRepository = {
             include: { creator: { select: { id: true, fullName: true, email: true } } },
         }),
 
-    deleteNote: (noteId: string) =>
-        prisma.contactNote.delete({ where: { id: noteId } }),
+    deleteNote: (noteId: string, organizationId?: string) =>
+        prisma.contactNote.deleteMany({ where: { id: noteId, ...(organizationId ? { contact: { organizationId } } : {}) } }),
 
     // File links
     addFileLink: (data: { contactId: string; title: string; url: string; fileType?: string; createdBy?: string }) =>
@@ -161,6 +161,6 @@ export const ContactRepository = {
             include: { creator: { select: { id: true, fullName: true, email: true } } },
         }),
 
-    deleteFileLink: (fileId: string) =>
-        prisma.fileLink.delete({ where: { id: fileId } }),
+    deleteFileLink: (fileId: string, organizationId?: string) =>
+        prisma.fileLink.deleteMany({ where: { id: fileId, ...(organizationId ? { contact: { organizationId } } : {}) } }),
 };
