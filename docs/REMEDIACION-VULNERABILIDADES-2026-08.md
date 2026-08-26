@@ -46,12 +46,12 @@ Nomenclatura de hallazgos tomada de la auditoría (A1–A8) y de la revalidació
 | **V5** | Portal — contraseña de invitado hardcodeada `DomotaiGuest` da acceso al CRM | Crítica | Contrato | ✅ **Corregido** (`c09b935`) |
 | **V6** | `client-login` autentica sólo con email y devuelve shareTokens | Crítica | Contrato + SMTP | 🔎 **Analizado, pospuesto** (§ V6) |
 | **V7** | SSRF semi-ciego en `POST /monitor/:apiKey/ingest` | Alta | Aditivo | ⬜ Pendiente |
-| **IDOR-tag** | Módulo `tag` completo sin scoping por organización | Alta | Aditivo | ⬜ Pendiente |
-| **IDOR-time** | `PATCH /time-entries/:id/stop` sin orgId | Media | Aditivo | ⬜ Pendiente |
-| **IDOR-lead** | `restore`, `events`, `files`, `convert` sin scoping | Media | Aditivo | ⬜ Pendiente |
-| **IDOR-cont/comp** | notas y file links de contact/company sin scoping | Media | Aditivo | ⬜ Pendiente |
-| **IDOR-dash** | `weekly-digest` opera sobre una org arbitraria | Media | Aditivo | ⬜ Pendiente |
-| **IDOR-cap** | `capacity` cuenta tareas de todas las orgs del perfil | Baja | Aditivo | ⬜ Pendiente |
+| **IDOR-tag** | Módulo `tag` completo sin scoping por organización | Alta | Aditivo | ✅ **Corregido** (`fe80f02`) |
+| **IDOR-time** | `PATCH /time-entries/:id/stop` sin orgId | Media | Aditivo | ✅ **Corregido** (`fe80f02`) |
+| **IDOR-lead** | `restore`, `events`, `files`, `convert` sin scoping | Media | Aditivo | ✅ **Corregido** (`a13fd42`) |
+| **IDOR-cont/comp** | notas y file links de contact/company sin scoping | Media | Aditivo | ✅ **Corregido** (`a13fd42`) |
+| **IDOR-dash** | `weekly-digest` opera sobre una org arbitraria | Media | Aditivo | ✅ **Corregido** (`4860017`) |
+| **IDOR-cap** | `capacity` cuenta tareas de todas las orgs del perfil | Baja | Aditivo | ✅ **Corregido** (`4860017`) |
 | **A7** | Mass assignment (`{...req.body}` → Prisma sin schema) | Alta | Contrato (leve) | ⬜ Pendiente |
 | **Menores** | github SSRF/path, CSV injection, JWT no rota en changePassword, etc. | Baja–Media | Mixto | ⬜ Pendiente |
 
@@ -213,6 +213,41 @@ OrganizationMember aunque el email sea nuevo (V5) / deleteShare cross-org→404.
 **Frontend (pendiente, commit gemelo):** la pantalla de invitación pasa de
 "credenciales" a "enviamos un enlace"; el cliente deja de entrar por
 `/users/login`. Las llamadas de share ya mandan `X-Organization-Id`.
+
+### Bloque IDOR aditivo — tag, time-entry, lead, contact/company, dashboard, capacity ✅
+
+- **Commits:** `fe80f02` (tag + time-entry), `a13fd42` (lead + contact + company),
+  `4860017` (dashboard + capacity). Rama `fix/idor-put-users-role-escalation`.
+- **Fecha:** 2026-08-26
+
+**Naturaleza.** Todo aditivo y backend-only: ninguna llamada legítima cambia de
+comportamiento; sólo dejan de funcionar los accesos cruzados entre organizaciones.
+Patrón único (el mismo de V1/V2/V4): la operación sobre un registro concreto lleva
+`organizationId` en el `where` — directo si el modelo lo tiene, o por la relación
+padre si no. `updateMany`/`deleteMany` con `count===0 → 404` (atómico, sin TOCTOU).
+
+| Módulo | Cambio | Scoping |
+|---|---|---|
+| **tag** | `update`/`delete` → `updateMany`/`deleteMany` acotados; `assign`/`remove`/`setTaskTags` validan que el `ProjectTask` y los `tagId` sean de la org; se sustituye la cabecera cruda por `req.orgId` | `Tag`/`ProjectTask` tienen org; `ProjectTaskTag` no → validar ambos extremos |
+| **time-entry** | `stopTimer(id, orgId?)` lee con `findFirst` y escribe con `updateMany`, ambos acotados | `TimeEntry.organizationId` |
+| **lead** | `restore` pasa orgId (+404); `deleteEvent` → `deleteMany` acotado; `deleteFileLink` por relación; `addFileLink` valida el lead; `convert` valida el `projectId` del body | `LeadEvent` tiene org; `FileLink` no → por relación `lead` |
+| **contact / company** | `deleteNote`/`deleteFileLink` por relación; `company.addFileLink` valida la company | `ContactNote`/`FileLink` no tienen org → por relación `contact`/`company` |
+| **dashboard** | `weeklyDigest` usa `req.orgId` (antes `organization.findFirst()` sin `where` → la primera org de la tabla) | `req.orgId` |
+| **capacity** | `countOpenTasks`/`countOverdueTasks` aceptan `organizationId` y lo aplican en los 4 `count` | `ProjectTask`/`Task.organizationId` |
+
+**Tests (nuevos):** `tag.controller.test.ts`, `time-entry.repository.test.ts`,
+`lead-idor.controller.test.ts`, `contact.controller.test.ts`,
+`company.controller.test.ts`, `capacity.repository.test.ts`,
+`dashboard-digest.controller.test.ts` — en cada uno "recurso de otra org → 404 y no
+se escribe". Suite 548 verde, typecheck limpio.
+
+**Verificación end-to-end** (dos orgs QA): editar/borrar tag de otra org → 404 y el
+tag intacto; `time-entries/:id/stop` cross-org → 404; cada org recibe su propio
+weekly-digest.
+
+**Nota:** el mass assignment (A7) sigue abierto — mientras el body pueda traer
+`organizationId`, un registro propio aún puede mudarse a otra org en los endpoints
+sin schema. Es el complemento de este bloque.
 
 ---
 
