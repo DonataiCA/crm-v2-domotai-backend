@@ -788,6 +788,10 @@ model Task {
   progress       Int       @default(0)
   dueDate        DateTime?
   reminderDate   DateTime?
+  // Marcadores de idempotencia para el barrido de recordatorios: se sellan
+  // cuando ya se envió el correo del disparador correspondiente, para no reenviar.
+  reminderSentAt    DateTime?
+  dueReminderSentAt DateTime?
   assignedTo     String?
   contactId      String?
   leadId         String?

@@ -14,6 +14,9 @@ export const createTaskSchema = z.object({
     leadId: z.string().uuid().optional().nullable(),
     assignedTo: z.string().uuid().optional().nullable(),
     dueDate: z.string().optional().nullable(),
+    // Sin declararlo, `.strip()` lo descartaba en silencio y el recordatorio
+    // nunca se guardaba (el controlador sí lo lee en task.controller.ts).
+    reminderDate: z.string().optional().nullable(),
 }).strip();
 
 export const updateTaskSchema = createTaskSchema.partial();

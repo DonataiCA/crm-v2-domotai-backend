@@ -50,6 +50,11 @@ const taskListIncludes = {
     project: { select: { id: true, name: true } },
 };
 
+const reminderTaskInclude = {
+    assignee: { select: { id: true, fullName: true, email: true } },
+    project: { select: { name: true } },
+};
+
 const taskDetailIncludes = {
     assignee: { select: { id: true, fullName: true, email: true } },
     creator: { select: { id: true, fullName: true, email: true } },
@@ -152,6 +157,40 @@ export const TaskRepository = {
         prisma.task.deleteMany({
             where: { id: { in: ids }, organizationId: orgId },
         }),
+
+    // ─── Recordatorios por fecha (barrido programado) ────────────────────────
+    // Datos mínimos para armar el correo del asignado.
+    reminderInclude: reminderTaskInclude,
+
+    // Tareas cuyo `reminderDate` ya llegó y aún no se avisó.
+    findReminderDue: (now: Date) =>
+        prisma.task.findMany({
+            where: {
+                reminderDate: { lte: now },
+                reminderSentAt: null,
+                assignedTo: { not: null },
+                status: { not: 'COMPLETED' },
+            },
+            include: reminderTaskInclude,
+        }),
+
+    // Tareas que entran en la ventana "vence pronto" (dueDate <= umbral) sin avisar.
+    findDueSoon: (threshold: Date) =>
+        prisma.task.findMany({
+            where: {
+                dueDate: { lte: threshold },
+                dueReminderSentAt: null,
+                assignedTo: { not: null },
+                status: { not: 'COMPLETED' },
+            },
+            include: reminderTaskInclude,
+        }),
+
+    markReminderSent: (id: string) =>
+        prisma.task.update({ where: { id }, data: { reminderSentAt: new Date() } }),
+
+    markDueReminderSent: (id: string) =>
+        prisma.task.update({ where: { id }, data: { dueReminderSentAt: new Date() } }),
 
     // Comments
     addComment: (data: {
