@@ -165,6 +165,8 @@ model Organization {
   pipelines        Pipeline[]
   projectShares    ProjectShare[]
   tags             Tag[]
+  projectLinks     ProjectLink[]
+  taskDeliverables TaskDeliverable[]
 
   @@map("organizations")
   subscriptions ServiceSubscription[]
@@ -441,6 +443,7 @@ model Project {
   gitMetrics   GitMetric[]
   gitCommits   GitCommit[]
   repos        ProjectRepo[]
+  projectLinks ProjectLink[]
   leads        Lead[]
   generalTasks Task[]        @relation("TaskProject")
   invoices     Invoice[]
@@ -508,6 +511,8 @@ model ProjectTask {
   conclusion     String?
   status         String?   @default("TODO")
   priority       String?   @default("MEDIUM")
+  // Completion percentage (0-100) shown as a fill on the task bars.
+  progress       Int       @default(0)
   orderIndex     Int       @default(0)
   startDate      DateTime?
   dueDate        DateTime?
@@ -531,9 +536,50 @@ model ProjectTask {
   emailNotifications EmailNotification[] @relation("ProjectTaskEmailNotif")
   timeEntries  TimeEntry[]   @relation("TimeEntryProjectTask")
   taskTags     ProjectTaskTag[]
+  deliverables TaskDeliverable[]
 
   @@index([projectId, status])
   @@map("project_tasks")
+}
+
+model ProjectLink {
+  id             String   @id @default(uuid())
+  projectId      String
+  organizationId String
+  title          String
+  url            String
+  description    String?
+  orderIndex     Int      @default(0)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([organizationId])
+  @@map("project_links")
+}
+
+model TaskDeliverable {
+  id             String    @id @default(uuid())
+  projectTaskId  String
+  organizationId String
+  title          String
+  done           Boolean   @default(false)
+  doneAt         DateTime?
+  orderIndex     Int       @default(0)
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  projectTask  ProjectTask  @relation(fields: [projectTaskId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([projectTaskId])
+  @@index([organizationId])
+  @@map("task_deliverables")
 }
 
 // ─── TAGS ───────────────────────────────────────────────────────────────────

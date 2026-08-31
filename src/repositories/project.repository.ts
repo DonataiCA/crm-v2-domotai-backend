@@ -47,6 +47,7 @@ const TASK_INCLUDE = {
         orderBy: { createdAt: 'asc' as const },
         include: { creator: { select: { id: true, fullName: true, email: true } } },
     },
+    deliverables: { orderBy: { orderIndex: 'asc' as const } },
 } as const;
 
 const projectIncludes = {

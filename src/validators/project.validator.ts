@@ -132,6 +132,7 @@ export const createProjectTaskSchema = z.object({
     dueDate: z.string().optional().nullable(),
     startDate: z.string().optional().nullable(),
     estimatedHours: z.number().optional().nullable(),
+    progress: z.number().int().min(0).max(100).optional(),
 }).strip().superRefine((values, ctx) => {
     if (isInvertedDateRange(values.startDate, values.dueDate)) {
         ctx.addIssue({
@@ -141,3 +142,26 @@ export const createProjectTaskSchema = z.object({
         });
     }
 });
+
+export const createProjectLinkSchema = z.object({
+    title: z.string().min(1, 'Title is required').max(200),
+    url: z.string().min(1, 'URL is required').max(2000),
+    description: z.string().max(2000).optional().nullable(),
+    orderIndex: z.number().int().optional(),
+}).strip();
+
+export const updateProjectLinkSchema = createProjectLinkSchema.partial();
+
+export const reorderProjectLinksSchema = z.object({
+    orderedIds: z.array(z.string().uuid()).min(1, 'orderedIds is required'),
+}).strip();
+
+export const createTaskDeliverableSchema = z.object({
+    title: z.string().min(1, 'Title is required').max(500),
+    orderIndex: z.number().int().optional(),
+}).strip();
+
+export const updateTaskDeliverableSchema = z.object({
+    title: z.string().min(1).max(500).optional(),
+    done: z.boolean().optional(),
+}).strip();

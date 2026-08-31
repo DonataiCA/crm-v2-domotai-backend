@@ -297,6 +297,11 @@ export const ProjectController = {
             if (data.startDate !== undefined) data.startDate = data.startDate ? new Date(data.startDate as string) : null;
             if (data.dueDate !== undefined) data.dueDate = data.dueDate ? new Date(data.dueDate as string) : null;
             if (data.completedAt !== undefined) data.completedAt = data.completedAt ? new Date(data.completedAt as string) : null;
+            if (data.progress !== undefined) {
+                const progress = Number(data.progress);
+                if (!Number.isFinite(progress)) return sendError(res, 400, 'Progress must be a number between 0 and 100');
+                data.progress = Math.min(100, Math.max(0, Math.round(progress)));
+            }
 
             // Only checked when the request touches a date, so updates that leave the range
             // untouched (drag between columns, completion) keep working on pre-existing records.

@@ -1,9 +1,23 @@
 import { Router } from 'express';
 import { ProjectController } from '../controllers/project.controller';
 import { ProjectMonitorController } from '../controllers/project-monitor.controller';
+import { ProjectLinkController } from '../controllers/project-link.controller';
+import { TaskDeliverableController } from '../controllers/task-deliverable.controller';
 import { authenticate, requireOrgMembership } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
-import { createProjectSchema, updateProjectSchema, createPhaseSchema, createProjectTaskSchema, chatTaskSchema, importTasksSchema } from '../validators/project.validator';
+import {
+    createProjectSchema,
+    updateProjectSchema,
+    createPhaseSchema,
+    createProjectTaskSchema,
+    chatTaskSchema,
+    importTasksSchema,
+    createProjectLinkSchema,
+    updateProjectLinkSchema,
+    reorderProjectLinksSchema,
+    createTaskDeliverableSchema,
+    updateTaskDeliverableSchema,
+} from '../validators/project.validator';
 
 const router = Router();
 
@@ -50,6 +64,18 @@ router.delete('/project-tasks/:taskId', ProjectController.deleteTask);
 // Project Task Comments
 router.post('/project-tasks/:taskId/comments', ProjectController.addTaskComment);
 router.delete('/project-tasks/comments/:commentId', ProjectController.deleteTaskComment);
+
+// Task deliverables (checklist items on a project task)
+router.post('/project-tasks/:taskId/deliverables', validate(createTaskDeliverableSchema), TaskDeliverableController.create);
+router.put('/project-tasks/deliverables/:id', validate(updateTaskDeliverableSchema), TaskDeliverableController.update);
+router.delete('/project-tasks/deliverables/:id', TaskDeliverableController.delete);
+
+// Project links (pinned URLs on a project) — reorder before :linkId so it isn't captured
+router.get('/:projectId/links', ProjectLinkController.list);
+router.post('/:projectId/links', validate(createProjectLinkSchema), ProjectLinkController.create);
+router.put('/:projectId/links/reorder', validate(reorderProjectLinksSchema), ProjectLinkController.reorder);
+router.put('/:projectId/links/:linkId', validate(updateProjectLinkSchema), ProjectLinkController.update);
+router.delete('/:projectId/links/:linkId', ProjectLinkController.delete);
 
 // Team Members
 router.get('/:projectId/members', ProjectController.getMembers);
