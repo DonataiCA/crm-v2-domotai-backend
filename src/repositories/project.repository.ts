@@ -395,4 +395,50 @@ export const ProjectRepository = {
         });
         return count > 0;
     },
+
+    // ─── Recordatorios por fecha (barrido programado) ────────────────────────
+    // Tareas de proyecto que entran en la ventana "vence pronto" por `dueDate`.
+    findTasksDueSoon: (threshold: Date) =>
+        prisma.projectTask.findMany({
+            where: {
+                dueDate: { lte: threshold },
+                dueReminderSentAt: null,
+                assignedTo: { not: null },
+                status: { not: 'COMPLETED' },
+            },
+            select: {
+                id: true,
+                title: true,
+                organizationId: true,
+                assignedTo: true,
+                dueDate: true,
+                assignee: { select: { id: true, fullName: true, email: true } },
+                project: { select: { name: true } },
+            },
+        }),
+
+    markTaskDueReminderSent: (id: string) =>
+        prisma.projectTask.update({ where: { id }, data: { dueReminderSentAt: new Date() } }),
+
+    // Proyectos que vencen pronto por `endDate` (recordatorio al responsable).
+    findProjectsDueSoon: (threshold: Date) =>
+        prisma.project.findMany({
+            where: {
+                endDate: { lte: threshold },
+                endReminderSentAt: null,
+                projectLeadId: { not: null },
+                status: { notIn: ['COMPLETED', 'ARCHIVED'] },
+            },
+            select: {
+                id: true,
+                name: true,
+                organizationId: true,
+                projectLeadId: true,
+                endDate: true,
+                projectLead: { select: { id: true, fullName: true, email: true } },
+            },
+        }),
+
+    markProjectDueReminderSent: (id: string) =>
+        prisma.project.update({ where: { id }, data: { endReminderSentAt: new Date() } }),
 };

@@ -337,6 +337,8 @@ model Lead {
   recurringStartDate DateTime?
   recurringEndDate   DateTime?
   nextFollowUp       DateTime?
+  // Idempotencia del recordatorio de próximo seguimiento (barrido).
+  followUpReminderSentAt DateTime?
   converted          Boolean   @default(false)
   convertedAt        DateTime?
   contactId          String?
@@ -418,6 +420,8 @@ model Project {
   prd                String?
   startDate          DateTime?
   endDate            DateTime?
+  // Idempotencia del recordatorio de vencimiento del proyecto (barrido).
+  endReminderSentAt  DateTime?
   repositoryUrl      String?
   repositoryName     String?
   githubOwner        String?
@@ -517,6 +521,8 @@ model ProjectTask {
   startDate      DateTime?
   dueDate        DateTime?
   completedAt    DateTime?
+  // Idempotencia del recordatorio de vencimiento (barrido de recordatorios).
+  dueReminderSentAt DateTime?
   assignedTo     String?
   createdBy      String?
   createdByGuest Boolean   @default(false)
@@ -788,6 +794,10 @@ model Task {
   progress       Int       @default(0)
   dueDate        DateTime?
   reminderDate   DateTime?
+  // Marcadores de idempotencia para el barrido de recordatorios: se sellan
+  // cuando ya se envió el correo del disparador correspondiente, para no reenviar.
+  reminderSentAt    DateTime?
+  dueReminderSentAt DateTime?
   assignedTo     String?
   contactId      String?
   leadId         String?
