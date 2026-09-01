@@ -14,7 +14,10 @@ cd "$(dirname "$0")/.."   # raíz del repo backend
 MAILPIT_BIN="${MAILPIT_BIN:-$HOME/bin/mailpit}"
 SMTP_PORT="${SMTP_PORT:-1025}"
 UI_PORT="${MAILPIT_UI_PORT:-8025}"
-TASK_ID="aaaaaaaa-1111-2222-3333-444444444444"   # id fijo → re-ejecuciones resetean la misma fila
+TASK_ID="aaaaaaaa-1111-2222-3333-444444444444"      # Task (reminderDate)
+PROJECT_ID="bbbbbbbb-1111-2222-3333-444444444444"   # Project (endDate)
+PTASK_ID="dddddddd-1111-2222-3333-444444444444"     # ProjectTask (dueDate)
+# ids fijos → re-ejecuciones resetean las mismas filas
 
 # DATABASE_URL desde el .env, sin el ?schema=public que psql rechaza
 DBURL="$(grep -m1 '^DATABASE_URL=' .env | sed 's/DATABASE_URL=//; s/"//g; s/?schema=public//')"
@@ -55,6 +58,18 @@ VALUES ('$TASK_ID', 'DEMO recordatorio $(date +%H:%M:%S)', 'TODO', 'HIGH', 0, no
 ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, \"reminderDate\"=now()-interval '1 minute', \"reminderSentAt\"=NULL, \"dueReminderSentAt\"=NULL, status='TODO';" >/dev/null
 echo "   ok (id $TASK_ID)"
 
+echo "3b) Proyecto de prueba (endDate en ventana, responsable = asignado)"
+psql "$DBURL" -q -c "INSERT INTO projects (id, name, status, \"commissionPaid\", \"endDate\", \"projectLeadId\", \"organizationId\", \"createdAt\", \"updatedAt\")
+VALUES ('$PROJECT_ID', 'DEMO proyecto $(date +%H:%M:%S)', 'IN_PROGRESS', false, now() + interval '12 hours', '$PROFILE_ID', '$ORG_ID', now(), now())
+ON CONFLICT (id) DO UPDATE SET \"endDate\"=now()+interval '12 hours', \"endReminderSentAt\"=NULL, \"projectLeadId\"='$PROFILE_ID', status='IN_PROGRESS';" >/dev/null
+echo "   ok (id $PROJECT_ID)"
+
+echo "3c) Tarea de proyecto de prueba (dueDate en ventana, asignada)"
+psql "$DBURL" -q -c "INSERT INTO project_tasks (id, \"projectId\", \"organizationId\", title, status, \"orderIndex\", progress, \"createdByGuest\", \"updatedByGuest\", \"dueDate\", \"assignedTo\", \"createdAt\", \"updatedAt\")
+VALUES ('$PTASK_ID', '$PROJECT_ID', '$ORG_ID', 'DEMO tarea de proyecto', 'TODO', 0, 0, false, false, now() + interval '12 hours', '$PROFILE_ID', now(), now())
+ON CONFLICT (id) DO UPDATE SET \"dueDate\"=now()+interval '12 hours', \"dueReminderSentAt\"=NULL, \"assignedTo\"='$PROFILE_ID', status='TODO';" >/dev/null
+echo "   ok (id $PTASK_ID)"
+
 echo "4) Barrido (npm run reminders:once → SMTP a Mailpit)"
 SMTP_HOST=localhost SMTP_PORT="$SMTP_PORT" SMTP_SECURE=false SMTP_USER= SMTP_PASS= \
     npm run --silent reminders:once 2>&1 | sed 's/^/   /'
@@ -73,9 +88,11 @@ print("   Abrela en: http://localhost:" + port)
 
 if [ "${1:-}" = "--clean" ]; then
     echo "6) Limpieza"
-    psql "$DBURL" -q -c "DELETE FROM notifications WHERE \"entityId\"='$TASK_ID';" >/dev/null
+    psql "$DBURL" -q -c "DELETE FROM notifications WHERE \"entityId\" IN ('$TASK_ID','$PROJECT_ID','$PTASK_ID');" >/dev/null
     psql "$DBURL" -q -c "DELETE FROM tasks WHERE id='$TASK_ID';" >/dev/null
-    echo "   tarea de prueba borrada."
+    psql "$DBURL" -q -c "DELETE FROM project_tasks WHERE id='$PTASK_ID';" >/dev/null
+    psql "$DBURL" -q -c "DELETE FROM projects WHERE id='$PROJECT_ID';" >/dev/null
+    echo "   datos de prueba borrados."
 fi
 echo "──────────────────────────────────────────────"
 echo "✅ Listo. Revisa el correo en http://localhost:${UI_PORT}"

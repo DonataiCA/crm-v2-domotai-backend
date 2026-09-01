@@ -418,6 +418,8 @@ model Project {
   prd                String?
   startDate          DateTime?
   endDate            DateTime?
+  // Idempotencia del recordatorio de vencimiento del proyecto (barrido).
+  endReminderSentAt  DateTime?
   repositoryUrl      String?
   repositoryName     String?
   githubOwner        String?
@@ -517,6 +519,8 @@ model ProjectTask {
   startDate      DateTime?
   dueDate        DateTime?
   completedAt    DateTime?
+  // Idempotencia del recordatorio de vencimiento (barrido de recordatorios).
+  dueReminderSentAt DateTime?
   assignedTo     String?
   createdBy      String?
   createdByGuest Boolean   @default(false)

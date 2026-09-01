@@ -1,4 +1,5 @@
 import { TaskRepository } from '../repositories/task.repository';
+import { ProjectRepository } from '../repositories/project.repository';
 import { notify } from '../utils/notify';
 
 /**
@@ -15,18 +16,20 @@ import { notify } from '../utils/notify';
  */
 export async function scanAndSendReminders(
     now: Date = new Date(),
-): Promise<{ reminderSent: number; dueSent: number }> {
+): Promise<{ reminderSent: number; dueSent: number; projectTaskDueSent: number; projectDueSent: number }> {
     const leadHours = Number(process.env.REMINDER_DUE_LEAD_HOURS) || 24;
     const dueThreshold = new Date(now.getTime() + leadHours * 60 * 60 * 1000);
 
     let reminderSent = 0;
     let dueSent = 0;
+    let projectTaskDueSent = 0;
+    let projectDueSent = 0;
 
-    // 1) Recordatorio explícito (reminderDate)
+    // 1) Tareas de CRM: recordatorio explícito (reminderDate)
     const reminderTasks = await TaskRepository.findReminderDue(now);
     for (const task of reminderTasks) {
         try {
-            await sendReminder(task, task.dueDate ?? task.reminderDate);
+            await sendTaskReminder(task, task.dueDate ?? task.reminderDate, 'TASK_DUE_SOON');
             await TaskRepository.markReminderSent(task.id);
             reminderSent++;
         } catch (error) {
@@ -34,11 +37,11 @@ export async function scanAndSendReminders(
         }
     }
 
-    // 2) "Vence pronto" (dueDate dentro de la ventana de anticipación)
+    // 2) Tareas de CRM: "vence pronto" (dueDate dentro de la ventana)
     const dueTasks = await TaskRepository.findDueSoon(dueThreshold);
     for (const task of dueTasks) {
         try {
-            await sendReminder(task, task.dueDate);
+            await sendTaskReminder(task, task.dueDate, 'TASK_DUE_SOON');
             await TaskRepository.markDueReminderSent(task.id);
             dueSent++;
         } catch (error) {
@@ -46,7 +49,44 @@ export async function scanAndSendReminders(
         }
     }
 
-    return { reminderSent, dueSent };
+    // 3) Tareas de PROYECTO: "vence pronto" (dueDate) → al asignado
+    const projectTasks = await ProjectRepository.findTasksDueSoon(dueThreshold);
+    for (const task of projectTasks) {
+        try {
+            await sendTaskReminder(task, task.dueDate, 'PROJECT_TASK_DUE_SOON');
+            await ProjectRepository.markTaskDueReminderSent(task.id);
+            projectTaskDueSent++;
+        } catch (error) {
+            console.error(`[REMINDERS] dueDate falló para projectTask ${task.id}:`, error);
+        }
+    }
+
+    // 4) PROYECTOS: vencimiento (endDate) → al responsable (projectLead)
+    const projects = await ProjectRepository.findProjectsDueSoon(dueThreshold);
+    for (const project of projects) {
+        try {
+            await notify({
+                type: 'PROJECT_DUE',
+                organizationId: project.organizationId,
+                recipientUserId: project.projectLeadId ?? undefined,
+                title: `Vencimiento de proyecto: ${project.name}`,
+                body: `El proyecto "${project.name}" tiene una fecha de fin próxima.`,
+                entityType: 'Project',
+                entityId: project.id,
+                metadata: {
+                    leadName: project.projectLead?.fullName ?? 'Team member',
+                    projectName: project.name,
+                    dueDate: project.endDate ? new Date(project.endDate).toISOString() : '',
+                },
+            });
+            await ProjectRepository.markProjectDueReminderSent(project.id);
+            projectDueSent++;
+        } catch (error) {
+            console.error(`[REMINDERS] endDate falló para project ${project.id}:`, error);
+        }
+    }
+
+    return { reminderSent, dueSent, projectTaskDueSent, projectDueSent };
 }
 
 type ReminderTask = {
@@ -55,19 +95,25 @@ type ReminderTask = {
     organizationId: string;
     assignedTo: string | null;
     dueDate: Date | null;
-    reminderDate: Date | null;
+    reminderDate?: Date | null;
     assignee: { id: string; fullName: string | null; email: string } | null;
     project: { name: string } | null;
 };
 
-async function sendReminder(task: ReminderTask, when: Date | null): Promise<void> {
+// Task y ProjectTask comparten la plantilla `sendTaskReminder`; sólo cambia el
+// `type` (para que el opt-out por preferencia sea independiente por entidad).
+async function sendTaskReminder(
+    task: ReminderTask,
+    when: Date | null,
+    type: 'TASK_DUE_SOON' | 'PROJECT_TASK_DUE_SOON',
+): Promise<void> {
     await notify({
-        type: 'TASK_DUE_SOON',
+        type,
         organizationId: task.organizationId,
         recipientUserId: task.assignedTo ?? undefined,
         title: `Recordatorio: ${task.title}`,
         body: `La tarea "${task.title}" tiene una fecha próxima.`,
-        entityType: 'Task',
+        entityType: type === 'PROJECT_TASK_DUE_SOON' ? 'ProjectTask' : 'Task',
         entityId: task.id,
         metadata: {
             assigneeName: task.assignee?.fullName ?? 'Team member',

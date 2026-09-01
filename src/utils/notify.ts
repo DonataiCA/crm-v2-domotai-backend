@@ -123,11 +123,20 @@ async function sendEmailForType(params: NotifyParams & { recipientEmail?: string
             );
             break;
         case 'TASK_DUE_SOON':
+        case 'PROJECT_TASK_DUE_SOON':
             await emailService.sendTaskReminder(
                 params.recipientEmail,
                 (meta.assigneeName as string) || 'Team member',
                 (meta.taskTitle as string) || params.title,
                 (meta.projectName as string) || '',
+                (meta.dueDate as string) || ''
+            );
+            break;
+        case 'PROJECT_DUE':
+            await emailService.sendProjectDeadline(
+                params.recipientEmail,
+                (meta.leadName as string) || 'Team member',
+                (meta.projectName as string) || params.title,
                 (meta.dueDate as string) || ''
             );
             break;

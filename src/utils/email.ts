@@ -235,6 +235,33 @@ export const emailService = {
     },
 
     /**
+     * Recordatorio de vencimiento de un proyecto, al responsable del proyecto.
+     */
+    sendProjectDeadline: async (
+        to: string,
+        leadName: string,
+        projectName: string,
+        endDate: string,
+    ) => {
+        const html = wrapHtml(
+            'Project Deadline',
+            `<p style="color:${GRAY_TEXT};line-height:1.7;font-size:15px;">
+              Hi <strong style="color:${DARK};">${leadName}</strong>,
+            </p>
+            <p style="color:${GRAY_TEXT};line-height:1.7;font-size:15px;">
+              This is a friendly reminder about an upcoming project deadline:
+            </p>
+            ${infoBox(`
+              <p style="margin:0;color:${DARK};font-size:16px;font-weight:700;">${projectName}</p>
+              <p style="margin:6px 0 0;color:#92400e;font-size:14px;font-weight:600;">
+                Due: ${new Date(endDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            `, '#f59e0b')}`,
+        );
+        return sendEmail(to, `Reminder: project ${projectName} is due soon`, html);
+    },
+
+    /**
      * Send new comment notification.
      */
     sendNewComment: async (
