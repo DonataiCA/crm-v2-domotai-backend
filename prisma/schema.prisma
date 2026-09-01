@@ -337,6 +337,8 @@ model Lead {
   recurringStartDate DateTime?
   recurringEndDate   DateTime?
   nextFollowUp       DateTime?
+  // Idempotencia del recordatorio de próximo seguimiento (barrido).
+  followUpReminderSentAt DateTime?
   converted          Boolean   @default(false)
   convertedAt        DateTime?
   contactId          String?

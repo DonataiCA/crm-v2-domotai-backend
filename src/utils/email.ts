@@ -262,6 +262,33 @@ export const emailService = {
     },
 
     /**
+     * Recordatorio de próximo seguimiento de un lead, a su asignado.
+     */
+    sendLeadFollowUp: async (
+        to: string,
+        assigneeName: string,
+        leadName: string,
+        followUpDate: string,
+    ) => {
+        const html = wrapHtml(
+            'Lead Follow-up',
+            `<p style="color:${GRAY_TEXT};line-height:1.7;font-size:15px;">
+              Hi <strong style="color:${DARK};">${assigneeName}</strong>,
+            </p>
+            <p style="color:${GRAY_TEXT};line-height:1.7;font-size:15px;">
+              You have a follow-up scheduled for this lead today:
+            </p>
+            ${infoBox(`
+              <p style="margin:0;color:${DARK};font-size:16px;font-weight:700;">${leadName}</p>
+              <p style="margin:6px 0 0;color:#92400e;font-size:14px;font-weight:600;">
+                Follow-up: ${new Date(followUpDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            `, '#f59e0b')}`,
+        );
+        return sendEmail(to, `Follow-up reminder: ${leadName}`, html);
+    },
+
+    /**
      * Send new comment notification.
      */
     sendNewComment: async (

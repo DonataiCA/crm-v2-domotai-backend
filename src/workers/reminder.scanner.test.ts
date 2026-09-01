@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
     findReminderDue, findDueSoon, markReminderSent, markDueReminderSent,
     findTasksDueSoon, markTaskDueReminderSent, findProjectsDueSoon, markProjectDueReminderSent,
+    findFollowUpDue, markFollowUpReminderSent,
     notify,
 } = vi.hoisted(() => ({
     findReminderDue: vi.fn(),
@@ -13,6 +14,8 @@ const {
     markTaskDueReminderSent: vi.fn(),
     findProjectsDueSoon: vi.fn(),
     markProjectDueReminderSent: vi.fn(),
+    findFollowUpDue: vi.fn(),
+    markFollowUpReminderSent: vi.fn(),
     notify: vi.fn(),
 }));
 
@@ -21,6 +24,9 @@ vi.mock('../repositories/task.repository', () => ({
 }));
 vi.mock('../repositories/project.repository', () => ({
     ProjectRepository: { findTasksDueSoon, markTaskDueReminderSent, findProjectsDueSoon, markProjectDueReminderSent },
+}));
+vi.mock('../repositories/lead.repository', () => ({
+    LeadRepository: { findFollowUpDue, markFollowUpReminderSent },
 }));
 vi.mock('../utils/notify', () => ({ notify }));
 
@@ -42,11 +48,13 @@ beforeEach(() => {
     findDueSoon.mockResolvedValue([]);
     findTasksDueSoon.mockResolvedValue([]);
     findProjectsDueSoon.mockResolvedValue([]);
+    findFollowUpDue.mockResolvedValue([]);
     notify.mockResolvedValue(undefined);
     markReminderSent.mockResolvedValue({});
     markDueReminderSent.mockResolvedValue({});
     markTaskDueReminderSent.mockResolvedValue({});
     markProjectDueReminderSent.mockResolvedValue({});
+    markFollowUpReminderSent.mockResolvedValue({});
 });
 
 describe('scanAndSendReminders', () => {
@@ -132,5 +140,32 @@ describe('scanAndSendReminders', () => {
         expect(arg.metadata.projectName).toBe('Proyecto X');
         expect(markProjectDueReminderSent).toHaveBeenCalledWith('pr1');
         expect(res.projectDueSent).toBe(1);
+    });
+
+    it('proyecto usa una ventana mayor (3 días) que las tareas (24 h)', async () => {
+        const now = new Date('2026-01-01T10:00:00Z');
+        await scanAndSendReminders(now);
+        const taskThreshold = findDueSoon.mock.calls[0][0] as Date;
+        const projectThreshold = findProjectsDueSoon.mock.calls[0][0] as Date;
+        expect(projectThreshold.getTime()).toBeGreaterThan(taskThreshold.getTime());
+    });
+
+    it('LEAD con nextFollowUp vencido: notifica LEAD_FOLLOWUP al asignado el día D y marca', async () => {
+        findFollowUpDue.mockResolvedValue([{
+            id: 'ld1', name: 'Acme Corp', organizationId: 'org-A', assignedTo: 'p1',
+            nextFollowUp: new Date('2026-01-01T09:00:00Z'),
+            assignee: { id: 'p1', fullName: 'Ana', email: 'ana@test.local' },
+        }]);
+
+        const res = await scanAndSendReminders(new Date('2026-01-01T10:00:00Z'));
+
+        // dispara "el día del seguimiento": el umbral que recibe el repo es `now`, no now+ventana
+        expect((findFollowUpDue.mock.calls[0][0] as Date).getTime()).toBe(new Date('2026-01-01T10:00:00Z').getTime());
+        const arg = notify.mock.calls[0][0];
+        expect(arg.type).toBe('LEAD_FOLLOWUP');
+        expect(arg.recipientUserId).toBe('p1');
+        expect(arg.metadata.leadName).toBe('Acme Corp');
+        expect(markFollowUpReminderSent).toHaveBeenCalledWith('ld1');
+        expect(res.followUpSent).toBe(1);
     });
 });

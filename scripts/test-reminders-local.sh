@@ -17,6 +17,7 @@ UI_PORT="${MAILPIT_UI_PORT:-8025}"
 TASK_ID="aaaaaaaa-1111-2222-3333-444444444444"      # Task (reminderDate)
 PROJECT_ID="bbbbbbbb-1111-2222-3333-444444444444"   # Project (endDate)
 PTASK_ID="dddddddd-1111-2222-3333-444444444444"     # ProjectTask (dueDate)
+LEAD_ID="eeeeeeee-1111-2222-3333-444444444444"      # Lead (nextFollowUp)
 # ids fijos → re-ejecuciones resetean las mismas filas
 
 # DATABASE_URL desde el .env, sin el ?schema=public que psql rechaza
@@ -70,6 +71,12 @@ VALUES ('$PTASK_ID', '$PROJECT_ID', '$ORG_ID', 'DEMO tarea de proyecto', 'TODO',
 ON CONFLICT (id) DO UPDATE SET \"dueDate\"=now()+interval '12 hours', \"dueReminderSentAt\"=NULL, \"assignedTo\"='$PROFILE_ID', status='TODO';" >/dev/null
 echo "   ok (id $PTASK_ID)"
 
+echo "3d) Lead de prueba (nextFollowUp vencido, asignado)"
+psql "$DBURL" -q -c "INSERT INTO leads (id, name, stage, \"nextFollowUp\", \"assignedTo\", \"organizationId\", converted, \"createdAt\", \"updatedAt\")
+VALUES ('$LEAD_ID', 'DEMO lead seguimiento', 'nuevo', now() - interval '1 minute', '$PROFILE_ID', '$ORG_ID', false, now(), now())
+ON CONFLICT (id) DO UPDATE SET \"nextFollowUp\"=now()-interval '1 minute', \"followUpReminderSentAt\"=NULL, \"assignedTo\"='$PROFILE_ID', converted=false, \"deletedAt\"=NULL;" >/dev/null
+echo "   ok (id $LEAD_ID)"
+
 echo "4) Barrido (npm run reminders:once → SMTP a Mailpit)"
 SMTP_HOST=localhost SMTP_PORT="$SMTP_PORT" SMTP_SECURE=false SMTP_USER= SMTP_PASS= \
     npm run --silent reminders:once 2>&1 | sed 's/^/   /'
@@ -88,10 +95,11 @@ print("   Abrela en: http://localhost:" + port)
 
 if [ "${1:-}" = "--clean" ]; then
     echo "6) Limpieza"
-    psql "$DBURL" -q -c "DELETE FROM notifications WHERE \"entityId\" IN ('$TASK_ID','$PROJECT_ID','$PTASK_ID');" >/dev/null
+    psql "$DBURL" -q -c "DELETE FROM notifications WHERE \"entityId\" IN ('$TASK_ID','$PROJECT_ID','$PTASK_ID','$LEAD_ID');" >/dev/null
     psql "$DBURL" -q -c "DELETE FROM tasks WHERE id='$TASK_ID';" >/dev/null
     psql "$DBURL" -q -c "DELETE FROM project_tasks WHERE id='$PTASK_ID';" >/dev/null
     psql "$DBURL" -q -c "DELETE FROM projects WHERE id='$PROJECT_ID';" >/dev/null
+    psql "$DBURL" -q -c "DELETE FROM leads WHERE id='$LEAD_ID';" >/dev/null
     echo "   datos de prueba borrados."
 fi
 echo "──────────────────────────────────────────────"

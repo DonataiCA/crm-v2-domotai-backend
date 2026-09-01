@@ -199,4 +199,29 @@ export const LeadRepository = {
             orderBy: { deletedAt: 'desc' },
             select: { id: true, name: true, stage: true, deletedAt: true },
         }),
+
+    // ─── Recordatorio de próximo seguimiento (barrido) ──────────────────────
+    // Leads cuya fecha de seguimiento ya llegó (día del seguimiento), sin avisar,
+    // no convertidos ni archivados, con asignado (destinatario del recordatorio).
+    findFollowUpDue: (now: Date) =>
+        prisma.lead.findMany({
+            where: {
+                nextFollowUp: { lte: now },
+                followUpReminderSentAt: null,
+                assignedTo: { not: null },
+                converted: false,
+                deletedAt: null,
+            },
+            select: {
+                id: true,
+                name: true,
+                organizationId: true,
+                assignedTo: true,
+                nextFollowUp: true,
+                assignee: { select: { id: true, fullName: true, email: true } },
+            },
+        }),
+
+    markFollowUpReminderSent: (id: string) =>
+        prisma.lead.update({ where: { id }, data: { followUpReminderSentAt: new Date() } }),
 };

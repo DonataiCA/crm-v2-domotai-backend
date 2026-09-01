@@ -140,6 +140,14 @@ async function sendEmailForType(params: NotifyParams & { recipientEmail?: string
                 (meta.dueDate as string) || ''
             );
             break;
+        case 'LEAD_FOLLOWUP':
+            await emailService.sendLeadFollowUp(
+                params.recipientEmail,
+                (meta.assigneeName as string) || 'Team member',
+                (meta.leadName as string) || params.title,
+                (meta.dueDate as string) || ''
+            );
+            break;
         case 'LEAD_ASSIGNED':
             await emailService.sendLeadAssigned(
                 params.recipientEmail,

@@ -1,29 +1,42 @@
 import { TaskRepository } from '../repositories/task.repository';
 import { ProjectRepository } from '../repositories/project.repository';
+import { LeadRepository } from '../repositories/lead.repository';
 import { notify } from '../utils/notify';
 
+// Anticipación por tipo (constantes de negocio, no configurables por env).
+const HOUR = 60 * 60 * 1000;
+// "Vence pronto" de tareas: se avisa 24 h antes del dueDate.
+const TASK_DUE_LEAD_MS = 24 * HOUR;
+// Vencimiento de proyecto: necesita más margen → 3 días antes del endDate.
+const PROJECT_DUE_LEAD_MS = 72 * HOUR;
+// reminderDate y nextFollowUp disparan el mismo día (sin anticipación): <= now.
+
 /**
- * Barrido de recordatorios de tareas por fecha.
+ * Barrido de recordatorios por fecha (tareas, tareas de proyecto, proyectos y
+ * seguimiento de leads). Convierte "llegó la fecha" en "enviar correo" vía
+ * `notify(...)`, que crea la notificación in-app, respeta las preferencias del
+ * usuario y manda el correo con la plantilla correspondiente.
  *
- * Convierte "llegó la fecha" en "enviar correo": recorre las tareas cuyo
- * `reminderDate` ya venció (y no se avisó) y las que entran en la ventana
- * "vence pronto" por `dueDate`, y por cada una emite `notify({ type:
- * 'TASK_DUE_SOON' })` — que crea la notificación in-app, respeta las
- * preferencias del usuario y manda el correo con `sendTaskReminder`.
+ * Criterio de disparo por tipo:
+ *   - Task.reminderDate  → el mismo día (reminderDate <= now)
+ *   - Task/ProjectTask.dueDate → 24 h antes (TASK_DUE_LEAD_MS)
+ *   - Project.endDate    → 3 días antes (PROJECT_DUE_LEAD_MS)
+ *   - Lead.nextFollowUp  → el día del seguimiento (nextFollowUp <= now)
  *
- * Idempotente: sella `reminderSentAt` / `dueReminderSentAt` tras avisar, así que
- * un segundo barrido no reenvía. Función pura (sin timer) para poder testearla.
+ * Idempotente: sella el marcador correspondiente tras avisar, así que un segundo
+ * barrido no reenvía. Función pura (sin timer) para poder testearla.
  */
 export async function scanAndSendReminders(
     now: Date = new Date(),
-): Promise<{ reminderSent: number; dueSent: number; projectTaskDueSent: number; projectDueSent: number }> {
-    const leadHours = Number(process.env.REMINDER_DUE_LEAD_HOURS) || 24;
-    const dueThreshold = new Date(now.getTime() + leadHours * 60 * 60 * 1000);
+): Promise<{ reminderSent: number; dueSent: number; projectTaskDueSent: number; projectDueSent: number; followUpSent: number }> {
+    const taskDueThreshold = new Date(now.getTime() + TASK_DUE_LEAD_MS);
+    const projectDueThreshold = new Date(now.getTime() + PROJECT_DUE_LEAD_MS);
 
     let reminderSent = 0;
     let dueSent = 0;
     let projectTaskDueSent = 0;
     let projectDueSent = 0;
+    let followUpSent = 0;
 
     // 1) Tareas de CRM: recordatorio explícito (reminderDate)
     const reminderTasks = await TaskRepository.findReminderDue(now);
@@ -37,8 +50,8 @@ export async function scanAndSendReminders(
         }
     }
 
-    // 2) Tareas de CRM: "vence pronto" (dueDate dentro de la ventana)
-    const dueTasks = await TaskRepository.findDueSoon(dueThreshold);
+    // 2) Tareas de CRM: "vence pronto" (dueDate dentro de la ventana de 24 h)
+    const dueTasks = await TaskRepository.findDueSoon(taskDueThreshold);
     for (const task of dueTasks) {
         try {
             await sendTaskReminder(task, task.dueDate, 'TASK_DUE_SOON');
@@ -49,8 +62,8 @@ export async function scanAndSendReminders(
         }
     }
 
-    // 3) Tareas de PROYECTO: "vence pronto" (dueDate) → al asignado
-    const projectTasks = await ProjectRepository.findTasksDueSoon(dueThreshold);
+    // 3) Tareas de PROYECTO: "vence pronto" (dueDate, 24 h) → al asignado
+    const projectTasks = await ProjectRepository.findTasksDueSoon(taskDueThreshold);
     for (const task of projectTasks) {
         try {
             await sendTaskReminder(task, task.dueDate, 'PROJECT_TASK_DUE_SOON');
@@ -61,8 +74,8 @@ export async function scanAndSendReminders(
         }
     }
 
-    // 4) PROYECTOS: vencimiento (endDate) → al responsable (projectLead)
-    const projects = await ProjectRepository.findProjectsDueSoon(dueThreshold);
+    // 4) PROYECTOS: vencimiento (endDate, 3 días) → al responsable (projectLead)
+    const projects = await ProjectRepository.findProjectsDueSoon(projectDueThreshold);
     for (const project of projects) {
         try {
             await notify({
@@ -86,7 +99,32 @@ export async function scanAndSendReminders(
         }
     }
 
-    return { reminderSent, dueSent, projectTaskDueSent, projectDueSent };
+    // 5) LEADS: próximo seguimiento (nextFollowUp) → al asignado, el día D
+    const followUps = await LeadRepository.findFollowUpDue(now);
+    for (const lead of followUps) {
+        try {
+            await notify({
+                type: 'LEAD_FOLLOWUP',
+                organizationId: lead.organizationId,
+                recipientUserId: lead.assignedTo ?? undefined,
+                title: `Seguimiento de lead: ${lead.name ?? ''}`,
+                body: `Hoy toca dar seguimiento al lead "${lead.name ?? ''}".`,
+                entityType: 'Lead',
+                entityId: lead.id,
+                metadata: {
+                    assigneeName: lead.assignee?.fullName ?? 'Team member',
+                    leadName: lead.name ?? '',
+                    dueDate: lead.nextFollowUp ? new Date(lead.nextFollowUp).toISOString() : '',
+                },
+            });
+            await LeadRepository.markFollowUpReminderSent(lead.id);
+            followUpSent++;
+        } catch (error) {
+            console.error(`[REMINDERS] nextFollowUp falló para lead ${lead.id}:`, error);
+        }
+    }
+
+    return { reminderSent, dueSent, projectTaskDueSent, projectDueSent, followUpSent };
 }
 
 type ReminderTask = {
