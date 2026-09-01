@@ -58,6 +58,15 @@ export const LeadRepository = {
             select: { id: true, slug: true, name: true, category: true },
         }),
 
+    // Todas las etapas del pipeline, para resolver la etapa entrante de forma
+    // tolerante (por slug o por nombre) en el controlador.
+    findStages: (pipelineId: string) =>
+        prisma.pipelineStage.findMany({
+            where: { pipelineId },
+            orderBy: { order: 'asc' },
+            select: { slug: true, name: true, category: true },
+        }),
+
     findDefaultPipeline: (organizationId: string) =>
         prisma.pipeline.findFirst({
             where: { organizationId, isDefault: true },
