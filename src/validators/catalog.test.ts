@@ -54,19 +54,27 @@ describe('createInvoiceSchema — estado', () => {
 });
 
 describe('createLeadSchema — etapa', () => {
-    it('acepta el nombre visible y guarda su slug', () => {
-        // Es lo que manda un tablero desplegado antes que esta versión.
+    // El validador ya NO muta ni rechaza por formato: acepta el valor tal cual
+    // (slug con guion, con guion bajo, o el nombre visible de un cliente viejo).
+    // La existencia en el pipeline y la canonicalización a slug las hace el
+    // controlador (resolveStage), que es donde se conoce el pipeline.
+    it('acepta el nombre visible tal cual (lo resuelve el controlador)', () => {
         const result = createLeadSchema.safeParse({ name: 'L', stage: 'Negociación' });
-        expect(result.success && result.data.stage).toBe('negociacion');
+        expect(result.success && result.data.stage).toBe('Negociación');
     });
 
-    it('deja intacto un slug que ya es canónico', () => {
+    it('acepta un slug con guion sin mutarlo', () => {
+        const result = createLeadSchema.safeParse({ name: 'L', stage: 'first-meeting' });
+        expect(result.success && result.data.stage).toBe('first-meeting');
+    });
+
+    it('acepta un slug con guion bajo', () => {
         const result = createLeadSchema.safeParse({ name: 'L', stage: 'primer_contacto' });
         expect(result.success && result.data.stage).toBe('primer_contacto');
     });
 
-    it('rechaza lo que no se puede convertir en slug', () => {
-        expect(createLeadSchema.safeParse({ name: 'L', stage: '¿¡?' }).success).toBe(false);
+    it('rechaza una etapa demasiado larga (>50)', () => {
+        expect(createLeadSchema.safeParse({ name: 'L', stage: 'x'.repeat(51) }).success).toBe(false);
     });
 
     it('sigue siendo opcional', () => {

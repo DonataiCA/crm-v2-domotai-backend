@@ -4,33 +4,45 @@ import { LeadRepository } from '../repositories/lead.repository';
 import { logAudit } from '../utils/audit';
 import { notify } from '../utils/notify';
 import { prisma } from '../config/prisma';
+import { slugifyStage } from '../constants/enums';
 
 /**
- * Resuelve el pipeline efectivo del lead y comprueba que la etapa pedida
- * exista dentro de él. Devuelve el mensaje de error o null si todo está bien.
+ * Resuelve la etapa pedida contra las etapas reales del pipeline del lead y
+ * devuelve el slug CANÓNICO que hay que guardar (o un error).
  *
- * Antes no se comprobaba nada: `stage` viajaba de `req.body` a la base tal
- * cual, así que un lead podía quedar en una etapa que su pipeline no tiene y
- * desaparecer del tablero sin que nadie supiera por qué.
+ * Resolución tolerante: acepta el slug con guion (`first-meeting`), con guion
+ * bajo (`first_meeting`) o el nombre visible (`"Negociación"`, cliente viejo).
+ * Se busca primero por coincidencia exacta de slug (determinismo si dos etapas
+ * colapsan al normalizar) y luego por clave normalizada de slug o de nombre.
+ *
+ * Se guarda `slugifyStage(match.slug)`, que siempre cumple `^[a-z0-9_]+$` —así el
+ * valor pasa la CHECK `leads_stage_slug_check` sea estricta, permisiva o inexistente
+ * (no dependemos de su estado en producción). El tablero agrupa de forma tolerante,
+ * de modo que un `stage` en guion bajo mapea igual a su columna con guion.
  */
-async function validateStage(
+async function resolveStage(
     stage: string | undefined,
     pipelineId: string | null | undefined,
     orgId: string,
-): Promise<string | null> {
-    if (!stage) return null;
+): Promise<{ slug?: string; name?: string; error?: string }> {
+    if (!stage) return {};
 
     let effectivePipelineId = pipelineId ?? null;
     if (!effectivePipelineId) {
         const defaultPipeline = await LeadRepository.findDefaultPipeline(orgId);
-        if (!defaultPipeline) return 'No pipeline available for this organization';
+        if (!defaultPipeline) return { error: 'No pipeline available for this organization' };
         effectivePipelineId = defaultPipeline.id;
     }
 
-    const found = await LeadRepository.findStageBySlug(effectivePipelineId, stage);
-    if (!found) return `Stage '${stage}' does not exist in the selected pipeline`;
+    const stages = await LeadRepository.findStages(effectivePipelineId);
+    const key = slugifyStage(stage);
+    const match =
+        stages.find(s => s.slug === stage) ??
+        stages.find(s => slugifyStage(s.slug) === key) ??
+        stages.find(s => slugifyStage(s.name) === key);
 
-    return null;
+    if (!match) return { error: `Stage '${stage}' does not exist in the selected pipeline` };
+    return { slug: slugifyStage(match.slug), name: match.name };
 }
 
 export const LeadController = {
@@ -85,19 +97,21 @@ export const LeadController = {
 
             const userId = (req as any).userId;
 
-            const stageError = await validateStage(req.body.stage, req.body.pipelineId, orgId);
-            if (stageError) return sendError(res, 400, stageError);
+            const resolved = await resolveStage(req.body.stage, req.body.pipelineId, orgId);
+            if (resolved.error) return sendError(res, 400, resolved.error);
 
-            // Sin `stage` explícito, se resuelve la etapa inicial del pipeline.
-            // El esquema ya no trae `@default("new")`: las etapas son por
-            // pipeline y configurables, así que no hay valor válido para todos.
-            let stage: string | undefined = req.body.stage;
+            // Con `stage` explícito, se guarda su forma canónica; sin él, se resuelve
+            // la etapa inicial del pipeline y también se canonicaliza (CHECK-safe).
+            // El esquema ya no trae `@default("new")`: las etapas son por pipeline y
+            // configurables, así que no hay valor válido para todos.
+            let stage: string | undefined = resolved.slug;
             if (!stage) {
                 const pipelineId = req.body.pipelineId
                     ?? (await LeadRepository.findDefaultPipeline(orgId))?.id
                     ?? null;
                 if (pipelineId) {
-                    stage = (await LeadRepository.findFirstStage(pipelineId))?.slug;
+                    const first = (await LeadRepository.findFirstStage(pipelineId))?.slug;
+                    stage = first ? slugifyStage(first) : undefined;
                 }
             }
 
@@ -134,12 +148,14 @@ export const LeadController = {
             const existing = await LeadRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Lead not found');
 
-            const stageError = await validateStage(
+            const resolved = await resolveStage(
                 req.body.stage,
                 req.body.pipelineId ?? existing.pipelineId,
                 orgId,
             );
-            if (stageError) return sendError(res, 400, stageError);
+            if (resolved.error) return sendError(res, 400, resolved.error);
+            // Persistir el slug canónico (CHECK-safe), no el valor entrante crudo.
+            if (resolved.slug !== undefined) req.body.stage = resolved.slug;
 
             const lead = await LeadRepository.update(req.params.id, req.body, orgId);
             if (!lead) return sendError(res, 404, 'Lead not found');
@@ -163,10 +179,11 @@ export const LeadController = {
 
             // Notify on stage change
             if (req.body.stage && req.body.stage !== existing.stage && existing.assignedTo) {
+                const stageLabel = resolved.name ?? req.body.stage;
                 await notify({
                     organizationId: existing.organizationId,
                     type: 'LEAD_STAGE_CHANGE',
-                    title: `Lead moved to ${req.body.stage}: ${lead.name}`,
+                    title: `Lead moved to ${stageLabel}: ${lead.name}`,
                     entityType: 'Lead',
                     entityId: lead.id,
                     actorId: (req as any).userId,

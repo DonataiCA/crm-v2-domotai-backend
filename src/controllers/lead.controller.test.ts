@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mismo motivo que en project.controller.test.ts: vi.mock se hoistea al inicio
 // del archivo, así que los mocks vienen de vi.hoisted().
 const {
-    findById, findStageBySlug, findDefaultPipeline, findFirstStage,
+    findById, findStages, findDefaultPipeline, findFirstStage,
     create, update, profileFindUnique,
 } = vi.hoisted(() => ({
     findById: vi.fn(),
-    findStageBySlug: vi.fn(),
+    findStages: vi.fn(),
     findDefaultPipeline: vi.fn(),
     findFirstStage: vi.fn(),
     create: vi.fn(),
@@ -16,7 +16,7 @@ const {
 }));
 
 vi.mock('../repositories/lead.repository', () => ({
-    LeadRepository: { findById, findStageBySlug, findDefaultPipeline, findFirstStage, create, update },
+    LeadRepository: { findById, findStages, findDefaultPipeline, findFirstStage, create, update },
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -43,38 +43,88 @@ function fakeRes() {
 beforeEach(() => { vi.clearAllMocks(); });
 
 /**
- * Antes de T6, `stage` viajaba de `req.body` a la base sin comprobar nada: un
- * lead podía quedar en una etapa que su pipeline no tiene y desaparecer del
- * tablero. Estos tests cubren el cableado, no sólo el repositorio que consulta.
+ * `stage` no viaja crudo a la base: el controlador lo resuelve contra las etapas
+ * reales del pipeline (por slug o nombre) y guarda el slug CANÓNICO underscore,
+ * que siempre pasa la CHECK. Estos tests cubren el cableado y la tolerancia.
  */
-describe('LeadController.update — validación referencial de la etapa', () => {
+describe('LeadController.update — resolución de la etapa', () => {
     it('rechaza con 400 una etapa que no existe en el pipeline del lead', async () => {
         findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1' });
-        findStageBySlug.mockResolvedValue(null);
+        findStages.mockResolvedValue([{ slug: 'ganado', name: 'Ganado', category: 'won' }]);
 
         const res = fakeRes();
         await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'etapa_de_otro' } }), res);
 
-        expect(findStageBySlug).toHaveBeenCalledWith('p1', 'etapa_de_otro');
+        expect(findStages).toHaveBeenCalledWith('p1');
         expect(res.status).toHaveBeenCalledWith(400);
         expect(update).not.toHaveBeenCalled();
     });
 
-    it('busca la etapa en el pipeline del lead, no en cualquiera', async () => {
-        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p-del-lead' });
-        findStageBySlug.mockResolvedValue({ id: 's1', slug: 'ganado', name: 'Ganado', category: 'won' });
-        update.mockResolvedValue({ id: 'l1', name: 'Lead', stage: 'ganado' });
+    it('slug con guion (first-meeting): matchea y guarda la forma canónica first_meeting', async () => {
+        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1', stage: 'nuevo' });
+        findStages.mockResolvedValue([{ slug: 'first-meeting', name: 'First Meeting', category: 'standard' }]);
+        update.mockResolvedValue({ id: 'l1', name: 'Lead', stage: 'first_meeting' });
 
         const res = fakeRes();
-        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'ganado' } }), res);
+        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'first-meeting' } }), res);
 
-        expect(findStageBySlug).toHaveBeenCalledWith('p-del-lead', 'ganado');
-        expect(update).toHaveBeenCalled();
+        expect(res.status).not.toHaveBeenCalledWith(400);
+        expect(update.mock.calls[0][1].stage).toBe('first_meeting');
+    });
+
+    it('slug con guion bajo (first_meeting) matchea la etapa first-meeting del pipeline', async () => {
+        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1', stage: 'nuevo' });
+        findStages.mockResolvedValue([{ slug: 'first-meeting', name: 'First Meeting', category: 'standard' }]);
+        update.mockResolvedValue({ id: 'l1', name: 'Lead' });
+
+        const res = fakeRes();
+        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'first_meeting' } }), res);
+
+        expect(res.status).not.toHaveBeenCalledWith(400);
+        expect(update.mock.calls[0][1].stage).toBe('first_meeting');
+    });
+
+    it('la ETIQUETA de un cliente viejo ("Negociación") matchea por nombre', async () => {
+        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1', stage: 'nuevo' });
+        findStages.mockResolvedValue([{ slug: 'negociacion', name: 'Negociación', category: 'standard' }]);
+        update.mockResolvedValue({ id: 'l1', name: 'Lead' });
+
+        const res = fakeRes();
+        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'Negociación' } }), res);
+
+        expect(res.status).not.toHaveBeenCalledWith(400);
+        expect(update.mock.calls[0][1].stage).toBe('negociacion');
+    });
+
+    it('el valor persistido siempre cumple ^[a-z0-9_]+$ (CHECK-safe)', async () => {
+        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1', stage: 'nuevo' });
+        findStages.mockResolvedValue([{ slug: 'cierre-ganado', name: 'Cierre - Ganado', category: 'won' }]);
+        update.mockResolvedValue({ id: 'l1', name: 'Lead' });
+
+        const res = fakeRes();
+        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'cierre-ganado' } }), res);
+
+        expect(update.mock.calls[0][1].stage).toMatch(/^[a-z0-9_]+$/);
+    });
+
+    it('con slugs que colapsan al normalizar, el match exacto de slug decide', async () => {
+        findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1', stage: 'x' });
+        findStages.mockResolvedValue([
+            { slug: 'a-b', name: 'A B', category: 'standard' },
+            { slug: 'a_b', name: 'A_B', category: 'standard' },
+        ]);
+        update.mockResolvedValue({ id: 'l1', name: 'Lead' });
+
+        const res = fakeRes();
+        await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'a_b' } }), res);
+
+        // Coincide exactamente con la etapa 'a_b' → se guarda su canónico 'a_b'
+        expect(update.mock.calls[0][1].stage).toBe('a_b');
     });
 
     it('un pipelineId del body manda sobre el que ya tiene el lead', async () => {
         findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p-viejo' });
-        findStageBySlug.mockResolvedValue({ id: 's1', slug: 'nuevo', name: 'Nuevo', category: 'standard' });
+        findStages.mockResolvedValue([{ slug: 'nuevo', name: 'Nuevo', category: 'standard' }]);
         update.mockResolvedValue({ id: 'l1', name: 'Lead' });
 
         const res = fakeRes();
@@ -83,17 +133,17 @@ describe('LeadController.update — validación referencial de la etapa', () => 
             res,
         );
 
-        expect(findStageBySlug).toHaveBeenCalledWith('p-nuevo', 'nuevo');
+        expect(findStages).toHaveBeenCalledWith('p-nuevo');
     });
 
-    it('no valida nada si la petición no toca la etapa', async () => {
+    it('no resuelve nada si la petición no toca la etapa', async () => {
         findById.mockResolvedValue({ id: 'l1', organizationId: 'org-A', pipelineId: 'p1' });
         update.mockResolvedValue({ id: 'l1', name: 'Renombrado' });
 
         const res = fakeRes();
         await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { name: 'Renombrado' } }), res);
 
-        expect(findStageBySlug).not.toHaveBeenCalled();
+        expect(findStages).not.toHaveBeenCalled();
         expect(update).toHaveBeenCalled();
     });
 
@@ -104,13 +154,13 @@ describe('LeadController.update — validación referencial de la etapa', () => 
         await LeadController.update(fakeReq({ params: { id: 'l1' }, body: { stage: 'ganado' } }), res);
 
         expect(res.status).toHaveBeenCalledWith(404);
-        expect(findStageBySlug).not.toHaveBeenCalled();
+        expect(findStages).not.toHaveBeenCalled();
     });
 });
 
-describe('LeadController.create — validación referencial de la etapa', () => {
+describe('LeadController.create — resolución de la etapa', () => {
     it('rechaza con 400 una etapa que el pipeline no tiene', async () => {
-        findStageBySlug.mockResolvedValue(null);
+        findStages.mockResolvedValue([{ slug: 'nuevo', name: 'Nuevo', category: 'standard' }]);
 
         const res = fakeRes();
         await LeadController.create(fakeReq({ body: { name: 'L', stage: 'inventada', pipelineId: 'p1' } }), res);
@@ -121,14 +171,14 @@ describe('LeadController.create — validación referencial de la etapa', () => 
 
     it('sin pipelineId, resuelve el pipeline por defecto de la organización', async () => {
         findDefaultPipeline.mockResolvedValue({ id: 'p-default', stages: [{ slug: 'nuevo', order: 0 }] });
-        findStageBySlug.mockResolvedValue({ id: 's1', slug: 'nuevo', name: 'Nuevo', category: 'standard' });
+        findStages.mockResolvedValue([{ slug: 'nuevo', name: 'Nuevo', category: 'standard' }]);
         create.mockResolvedValue({ id: 'l1', name: 'L' });
 
         const res = fakeRes();
         await LeadController.create(fakeReq({ body: { name: 'L', stage: 'nuevo' } }), res);
 
         expect(findDefaultPipeline).toHaveBeenCalledWith('org-A');
-        expect(findStageBySlug).toHaveBeenCalledWith('p-default', 'nuevo');
+        expect(findStages).toHaveBeenCalledWith('p-default');
         expect(create).toHaveBeenCalled();
     });
 
@@ -142,15 +192,15 @@ describe('LeadController.create — validación referencial de la etapa', () => 
         expect(create).not.toHaveBeenCalled();
     });
 
-    it('sin stage, usa la etapa inicial del pipeline en vez del default "new" que ya no existe', async () => {
-        findDefaultPipeline.mockResolvedValue({ id: 'p-default', stages: [{ slug: 'nuevo', order: 0 }] });
-        findFirstStage.mockResolvedValue({ slug: 'nuevo' });
+    it('sin stage, usa la etapa inicial del pipeline y la guarda canonicalizada', async () => {
+        findDefaultPipeline.mockResolvedValue({ id: 'p-default', stages: [{ slug: 'first-meeting', order: 0 }] });
+        findFirstStage.mockResolvedValue({ slug: 'first-meeting' });
         create.mockResolvedValue({ id: 'l1', name: 'L' });
 
         const res = fakeRes();
         await LeadController.create(fakeReq({ body: { name: 'L' } }), res);
 
         expect(findFirstStage).toHaveBeenCalledWith('p-default');
-        expect(create).toHaveBeenCalledWith(expect.objectContaining({ stage: 'nuevo' }));
+        expect(create).toHaveBeenCalledWith(expect.objectContaining({ stage: 'first_meeting' }));
     });
 });
