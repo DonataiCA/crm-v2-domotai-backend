@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { userUpdate, profileUpdateMany, validateId, validateUpd, userFindAll, userCount, userFindById } = vi.hoisted(() => ({
+const { userUpdate, profileUpdateMany, memberFindFirst, validateId, validateUpd, userFindAll, userCount, userFindById } = vi.hoisted(() => ({
     userUpdate: vi.fn(),
     profileUpdateMany: vi.fn(),
+    memberFindFirst: vi.fn(),
     validateId: vi.fn(),
     validateUpd: vi.fn(),
     userFindAll: vi.fn(),
@@ -15,7 +16,11 @@ vi.mock('../repositories/user.repository', () => ({
     AuthProvider: { EMAIL: 'EMAIL', GOOGLE: 'GOOGLE', APPLE: 'APPLE' },
 }));
 vi.mock('../config/prisma', () => ({
-    prisma: { profile: { updateMany: profileUpdateMany } },
+    prisma: {
+        profile: { updateMany: profileUpdateMany },
+        // isOrgAdmin (via el guard de roles) consulta la membresía de la organización.
+        organizationMember: { findFirst: memberFindFirst },
+    },
 }));
 vi.mock('../validators/user/params.validator', () => ({
     validateIdParam: validateId,
@@ -33,7 +38,7 @@ vi.mock('../transformers/user.transformer', () => ({
 import { UserController } from './user.controller';
 
 function fakeReq(overrides: Record<string, unknown> = {}) {
-    return { params: {}, query: {}, body: {}, ...overrides } as any;
+    return { params: {}, query: {}, body: {}, headers: {}, ...overrides } as any;
 }
 function fakeRes() {
     const res: any = {};
@@ -46,6 +51,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     userUpdate.mockResolvedValue({ id: 'u1' });
     profileUpdateMany.mockResolvedValue({ count: 1 });
+    memberFindFirst.mockResolvedValue(null);
 });
 
 /**
@@ -80,6 +86,31 @@ describe('UserController.update — guard anti-escalada de rol', () => {
         expect(res.status).not.toHaveBeenCalledWith(403);
         expect(profileUpdateMany).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ role: 'salesman' }) }),
+        );
+    });
+
+    it('un admin de la organización del header puede cambiar roles aunque su perfil sea salesman', async () => {
+        validateId.mockReturnValue({ id: 'victima' });
+        validateUpd.mockReturnValue({ role: 'pmo' });
+        memberFindFirst.mockResolvedValue({ role: 'admin' });
+        const res = fakeRes();
+
+        await UserController.update(
+            fakeReq({
+                params: { id: 'victima' },
+                userId: 'david',
+                user: { profileId: 'p-david', role: 'salesman' },
+                headers: { 'x-organization-id': 'org1' },
+            }),
+            res,
+        );
+
+        expect(memberFindFirst).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { organizationId: 'org1', userId: 'p-david' } }),
+        );
+        expect(res.status).not.toHaveBeenCalledWith(403);
+        expect(profileUpdateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ role: 'pmo' }) }),
         );
     });
 
