@@ -25,11 +25,13 @@ function fakeRes() {
 }
 
 /** Una fila tal y como la devuelve Prisma, con lo que la lista necesita. */
+// dueDate relativo a hoy: con una fecha fija el estado calculado cambiaba de
+// DUE a OVERDUE en cuanto el calendario la dejaba atrás y el test caducaba solo.
 const fila = (over: Record<string, unknown> = {}) => ({
     id: 'inv-1',
     invoiceNumber: 'F-001',
     status: 'SENT',
-    dueDate: new Date('2026-08-30T00:00:00.000Z'),
+    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
     paidAt: null,
     total: 1200,
     currency: 'USD',

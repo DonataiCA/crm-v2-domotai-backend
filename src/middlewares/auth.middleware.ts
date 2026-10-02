@@ -75,19 +75,37 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 };
 
+/**
+ * `true` si el solicitante es admin de la organización del header
+ * X-Organization-Id. La autoridad real del CRM vive ahí: en producción los
+ * administradores tienen `OrganizationMember.role = 'admin'` mientras su
+ * `Profile.role` sigue siendo 'salesman'/'freelancer' (su rol funcional).
+ * Mirar sólo el perfil dejaba el sistema sin ningún admin efectivo.
+ */
+async function isOrgAdmin(req: Request): Promise<boolean> {
+    const orgId = req.headers['x-organization-id'] as string | undefined;
+    const profileId = (req as any).user?.profileId as string | undefined;
+    if (!orgId || !profileId) return false;
+
+    // OrgMember.userId references Profile.id
+    const membership = await prisma.organizationMember.findFirst({
+        where: { organizationId: orgId, userId: profileId },
+        select: { role: true },
+    });
+    return isAdminRole(membership?.role);
+}
+
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const profileRole = (req as any).user?.role;
 
+        if (isAdminRole(profileRole)) return next();
+        if (await isOrgAdmin(req)) return next();
+
         if (!profileRole) {
             return sendError(res, 403, 'Access denied. Could not determine user role.');
         }
-
-        if (!isAdminRole(profileRole)) {
-            return sendError(res, 403, 'Access denied. Admin role required.');
-        }
-
-        next();
+        return sendError(res, 403, 'Access denied. Admin role required.');
     } catch (error) {
         return sendError(res, 500, 'Authorization error', error);
     }
@@ -99,15 +117,20 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
  * Debe ir DESPUÉS de `authenticate`. Cierra V1: `PUT /users/:id` dejaba que
  * cualquier autenticado editara —y escalara— cualquier cuenta.
  */
-export const requireSelfOrAdmin = (req: Request, res: Response, next: NextFunction) => {
-    const targetId = req.params.id;
-    const requesterId = (req as any).userId as string | undefined;
-    const requesterRole = (req as any).user?.role as string | undefined;
+export const requireSelfOrAdmin = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const targetId = req.params.id;
+        const requesterId = (req as any).userId as string | undefined;
+        const requesterRole = (req as any).user?.role as string | undefined;
 
-    if (requesterId && targetId === requesterId) return next();
-    if (isAdminRole(requesterRole)) return next();
+        if (requesterId && targetId === requesterId) return next();
+        if (isAdminRole(requesterRole)) return next();
+        if (await isOrgAdmin(req)) return next();
 
-    return sendError(res, 403, 'Access denied. You can only modify your own account.');
+        return sendError(res, 403, 'Access denied. You can only modify your own account.');
+    } catch (error) {
+        return sendError(res, 500, 'Authorization error', error);
+    }
 };
 
 /**
