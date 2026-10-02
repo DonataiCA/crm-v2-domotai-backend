@@ -95,6 +95,21 @@ export async function isOrgAdmin(req: Request): Promise<boolean> {
     return isAdminRole(membership?.role);
 }
 
+/**
+ * Prohíbe la ruta a los roles de perfil listados. Complementa a los guards
+ * positivos: hay datos (p. ej. el dashboard comercial) que un miembro legítimo
+ * de la organización no debe ver por su rol — el PMO supervisa proyectos, no
+ * ventas — y `requireOrgMembership` solo prueba pertenencia, no rol.
+ */
+export const forbidProfileRoles = (...roles: string[]) =>
+    (req: Request, res: Response, next: NextFunction) => {
+        const profileRole = normalizeRole((req as any).user?.role);
+        if (roles.includes(profileRole)) {
+            return sendError(res, 403, 'Access denied for this role.');
+        }
+        next();
+    };
+
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const profileRole = (req as any).user?.role;

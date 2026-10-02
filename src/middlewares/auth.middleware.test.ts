@@ -122,3 +122,23 @@ describe('requireAdmin', () => {
         expect(next).not.toHaveBeenCalled();
     });
 });
+
+describe('forbidProfileRoles', () => {
+    it('bloquea con 403 a un rol prohibido', async () => {
+        const { forbidProfileRoles } = await import('./auth.middleware');
+        const next = vi.fn();
+        const res = fakeRes();
+        forbidProfileRoles('client', 'pmo')(fakeReq({ user: { profileId: 'p1', role: 'pmo' } }), res, next);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    it('deja pasar a los demás roles, tolerando el casing', async () => {
+        const { forbidProfileRoles } = await import('./auth.middleware');
+        const next = vi.fn();
+        const res = fakeRes();
+        forbidProfileRoles('client', 'pmo')(fakeReq({ user: { profileId: 'p1', role: 'Salesman' } }), res, next);
+        expect(next).toHaveBeenCalledOnce();
+        expect(res.status).not.toHaveBeenCalled();
+    });
+});
