@@ -82,7 +82,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
  * `Profile.role` sigue siendo 'salesman'/'freelancer' (su rol funcional).
  * Mirar sólo el perfil dejaba el sistema sin ningún admin efectivo.
  */
-async function isOrgAdmin(req: Request): Promise<boolean> {
+export async function isOrgAdmin(req: Request): Promise<boolean> {
     const orgId = req.headers['x-organization-id'] as string | undefined;
     const profileId = (req as any).user?.profileId as string | undefined;
     if (!orgId || !profileId) return false;

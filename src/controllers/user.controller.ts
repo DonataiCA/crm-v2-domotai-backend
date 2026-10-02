@@ -18,6 +18,7 @@ import { validateGoogleAuth } from '../validators/user/google-auth.validator';
 import { validateAppleAuth } from '../validators/user/apple-auth.validator';
 import { validateLogout } from '../validators/user/logout.validator';
 import { transformUser, transformUsers, transformUserWithRelations } from '../transformers/user.transformer';
+import { isOrgAdmin } from '../middlewares/auth.middleware';
 import { verifyGoogleToken } from '../utils/google-auth';
 import { verifyAppleToken } from '../utils/apple-auth';
 import { emailService } from '../utils/email';
@@ -103,12 +104,14 @@ export const UserController = {
             const profileData: any = {};
             if (validatedData.fullName) profileData.fullName = validatedData.fullName;
             if (validatedData.phone !== undefined) profileData.phone = validatedData.phone;
-            // V1: sólo un admin puede cambiar el rol. Un no-admin únicamente
-            // puede reenviar su rol actual (no-op); intentar escalar es 403.
+            // V1: sólo un admin puede cambiar el rol — de perfil o de la organización
+            // del header, que es donde vive la autoridad real en producción. Un
+            // no-admin únicamente puede reenviar su rol actual (no-op); intentar
+            // escalar es 403.
             if (validatedData.role !== undefined) {
                 const requestedRole = normalizeRole(validatedData.role);
                 const requesterRole = (req as any).user?.role as string | undefined;
-                if (isAdminRole(requesterRole)) {
+                if (isAdminRole(requesterRole) || await isOrgAdmin(req)) {
                     profileData.role = requestedRole;
                 } else if (requestedRole !== requesterRole) {
                     return sendError(res, 403, 'Only an admin can change a user role.');
