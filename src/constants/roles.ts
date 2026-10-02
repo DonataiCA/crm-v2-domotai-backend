@@ -14,7 +14,10 @@
  * divergentes que este módulo viene a reemplazar.
  */
 
-export const PROFILE_ROLES = ['admin', 'salesman', 'freelancer', 'client', 'viewer'] as const;
+// 'pmo' supervisa todos los proyectos en modo lectura: no es rol de equipo
+// (no edita ni cuenta como recurso de capacidad) ni cliente (no se filtra
+// por shares, ve el catálogo completo de la organización).
+export const PROFILE_ROLES = ['admin', 'salesman', 'freelancer', 'pmo', 'client', 'viewer'] as const;
 export type ProfileRole = (typeof PROFILE_ROLES)[number];
 
 export const ORG_ROLES = ['admin', 'member', 'client'] as const;

@@ -53,7 +53,7 @@ describe('normalizeRole', () => {
 
 describe('catálogo', () => {
     it('declara los cinco roles de perfil', () => {
-        expect([...PROFILE_ROLES]).toEqual(['admin', 'salesman', 'freelancer', 'client', 'viewer']);
+        expect([...PROFILE_ROLES]).toEqual(['admin', 'salesman', 'freelancer', 'pmo', 'client', 'viewer']);
     });
 
     it('declara los tres roles de organización', () => {
