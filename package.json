@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "main": "dist/server.js",
     "engines": {
-        "node": ">=22.12.0"
+        "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
     },
     "scripts": {
         "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
@@ -58,6 +58,16 @@
         "vitest": "^4.1.10"
     },
     "overrides": {
-        "uuid": "^11.1.1"
+        "uuid": "^11.1.1",
+        "openai": {
+            "google-auth-library": "$google-auth-library"
+        }
+    },
+    "allowScripts": {
+        "@prisma/client": true,
+        "@prisma/engines": true,
+        "prisma": true,
+        "msgpackr-extract": false,
+        "fsevents": false
     }
 }
