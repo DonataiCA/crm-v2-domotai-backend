@@ -160,7 +160,11 @@ function zodMessage(issue: z.ZodIssue): string {
     return issue.message;
 }
 
-export function parseSyncDocument(content: string): ParseResult {
+/**
+ * @param options.projectId Proyecto en el que se importa. Si el archivo se exportó de
+ * otro, se rechaza entero: sus tareas sin id se crearían en el proyecto equivocado.
+ */
+export function parseSyncDocument(content: string, options: { projectId?: string } = {}): ParseResult {
     let raw: any;
     try {
         raw = JSON.parse(content);
@@ -186,6 +190,17 @@ export function parseSyncDocument(content: string): ParseResult {
             issues: [{
                 path: 'version',
                 message: `El archivo es de la versión ${raw.version} del formato y este CRM lee la versión ${TASK_SYNC_VERSION}. Exporta de nuevo.`,
+            }],
+        };
+    }
+    const fileProjectId = raw.project?.id;
+    if (options.projectId && fileProjectId && fileProjectId !== options.projectId) {
+        const name = typeof raw.project?.name === 'string' ? ` "${raw.project.name}"` : '';
+        return {
+            tasks: [],
+            issues: [{
+                path: 'project.id',
+                message: `Este archivo se exportó del proyecto${name}, no de este. Exporta las tareas de este proyecto y trabaja sobre ese archivo.`,
             }],
         };
     }

@@ -55,6 +55,8 @@ app.use(express.json({
 app.use(cors({
     origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:8080', 'http://localhost:5173'],
     credentials: true,
+    // El frontend lee el nombre del archivo de las descargas (export de tareas).
+    exposedHeaders: ['Content-Disposition'],
 }));
 app.use(helmet());
 
@@ -96,6 +98,8 @@ app.set('json replacer', (key: string, value: unknown) => {
 app.options('*', cors({
     origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:8080', 'http://localhost:5173'],
     credentials: true,
+    // El frontend lee el nombre del archivo de las descargas (export de tareas).
+    exposedHeaders: ['Content-Disposition'],
 }));
 
 // Logging middleware - logs all incoming requests

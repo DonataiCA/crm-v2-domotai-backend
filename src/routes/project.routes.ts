@@ -19,6 +19,8 @@ import {
     updateProjectLinkSchema,
     reorderProjectLinksSchema,
     reorderProjectTasksSchema,
+    taskSyncPreviewSchema,
+    applyTaskSyncSchema,
     createTaskDeliverableSchema,
     updateTaskDeliverableSchema,
 } from '../validators/project.validator';
@@ -64,6 +66,10 @@ router.delete('/phases/:phaseId', ProjectController.deletePhase);
 router.post('/:projectId/tasks', validate(createProjectTaskSchema), ProjectController.createTask);
 // Orden de una columna del Kanban (sólo equipo, como el resto de operaciones en bloque).
 router.put('/:projectId/tasks/reorder', requireTeamRole, validate(reorderProjectTasksSchema), TaskSyncController.reorder);
+// Exportar e importar las tareas en JSON: exportar → editar fuera → vista previa → confirmar.
+router.get('/:projectId/tasks/export', requireTeamRole, TaskSyncController.exportTasks);
+router.post('/:projectId/tasks/sync/preview', requireTeamRole, validate(taskSyncPreviewSchema), TaskSyncController.preview);
+router.post('/:projectId/tasks/sync/apply', requireTeamRole, validate(applyTaskSyncSchema), TaskSyncController.apply);
 router.put('/project-tasks/:taskId', validate(updateProjectTaskSchema), ProjectController.updateTask);
 router.delete('/project-tasks/:taskId', ProjectController.deleteTask);
 

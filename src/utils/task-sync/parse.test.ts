@@ -102,4 +102,12 @@ describe('parseSyncDocument', () => {
         doc.tasks[2].progress = -1;
         expect(parse(doc).issues[0].taskTitle).toBe('Endpoint de login');
     });
+
+    it('rechaza un archivo exportado de otro proyecto', () => {
+        const doc: any = exported();
+        const result = parseSyncDocument(JSON.stringify(doc), { projectId: 'otro-proyecto' });
+        expect(result.tasks).toEqual([]);
+        expect(result.issues[0]).toMatchObject({ path: 'project.id', message: expect.stringMatching(/Portal de clientes Andina/) });
+        expect(parseSyncDocument(JSON.stringify(doc), { projectId: 'proj-1' }).issues).toEqual([]);
+    });
 });

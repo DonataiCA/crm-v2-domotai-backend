@@ -54,6 +54,9 @@ describe('las operaciones en bloque sobre tareas exigen rol de equipo', () => {
     const cases: Array<[string, string, string]> = [
         ['POST /projects/:projectId/import-tasks', 'post', '/:projectId/import-tasks'],
         ['PUT /projects/:projectId/tasks/reorder', 'put', '/:projectId/tasks/reorder'],
+        ['GET /projects/:projectId/tasks/export', 'get', '/:projectId/tasks/export'],
+        ['POST /projects/:projectId/tasks/sync/preview', 'post', '/:projectId/tasks/sync/preview'],
+        ['POST /projects/:projectId/tasks/sync/apply', 'post', '/:projectId/tasks/sync/apply'],
     ];
 
     for (const [name, method, path] of cases) {
@@ -65,7 +68,11 @@ describe('las operaciones en bloque sobre tareas exigen rol de equipo', () => {
         });
     }
 
-    it('PUT /projects/:projectId/tasks/reorder valida el cuerpo', () => {
-        expect(handlersOf(projectRoutes, 'put', '/:projectId/tasks/reorder')).toBeGreaterThanOrEqual(3);
+    it.each([
+        ['put', '/:projectId/tasks/reorder'],
+        ['post', '/:projectId/tasks/sync/preview'],
+        ['post', '/:projectId/tasks/sync/apply'],
+    ])('%s %s valida el cuerpo', (method, path) => {
+        expect(handlersOf(projectRoutes, method, path)).toBeGreaterThanOrEqual(3);
     });
 });
