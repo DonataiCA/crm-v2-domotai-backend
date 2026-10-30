@@ -17,6 +17,7 @@ import {
     MAX_DOCUMENT_CHARS,
     MAX_DOCUMENT_FILENAME_CHARS,
     MAX_TEMPLATE_CHARS,
+    MAX_SYNC_FILE_CHARS,
 } from '../constants/document';
 
 export const PHASE_DATE_RANGE_MESSAGE = 'End date must be on or after the start date';
@@ -206,6 +207,28 @@ export const updateProjectLinkSchema = createProjectLinkSchema.partial();
 
 export const reorderProjectLinksSchema = z.object({
     orderedIds: z.array(z.string().uuid()).min(1, 'orderedIds is required'),
+}).strip();
+
+/** Orden de una columna del Kanban: la posición en el array es el `orderIndex`. */
+export const reorderProjectTasksSchema = z.object({
+    orderedIds: z.array(z.string().uuid()).min(1, 'orderedIds is required').max(5000),
+}).strip();
+
+/** Cuerpo de la vista previa del archivo JSON de tareas. */
+export const taskSyncPreviewSchema = z.object({
+    document: z.object({
+        fileName: z.string().min(1, 'File name is required').max(MAX_DOCUMENT_FILENAME_CHARS),
+        content: z
+            .string()
+            .min(1, 'The document is empty')
+            .max(MAX_SYNC_FILE_CHARS, `The document exceeds ${MAX_SYNC_FILE_CHARS} characters`),
+    }).strip(),
+}).strip();
+
+/** Confirmación: el mismo archivo, la huella del plan que se vio y los conflictos a forzar. */
+export const applyTaskSyncSchema = taskSyncPreviewSchema.extend({
+    planHash: z.string().regex(/^[0-9a-f]{40}$/, 'planHash is required'),
+    applyConflicts: z.array(z.string().min(1)).max(5000).default([]),
 }).strip();
 
 export const createTaskDeliverableSchema = z.object({

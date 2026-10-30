@@ -398,10 +398,11 @@ export const ProjectRepository = {
 
     // ─── Recordatorios por fecha (barrido programado) ────────────────────────
     // Tareas de proyecto que entran en la ventana "vence pronto" por `dueDate`.
-    findTasksDueSoon: (threshold: Date) =>
+    // Ventana [from, threshold]: una tarea vencida hace días no "vence pronto".
+    findTasksDueSoon: (from: Date, threshold: Date) =>
         prisma.projectTask.findMany({
             where: {
-                dueDate: { lte: threshold },
+                dueDate: { gte: from, lte: threshold },
                 dueReminderSentAt: null,
                 assignedTo: { not: null },
                 status: { not: 'COMPLETED' },

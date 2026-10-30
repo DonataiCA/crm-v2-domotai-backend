@@ -88,8 +88,25 @@ describe('scanAndSendReminders', () => {
     it('consulta dueSoon con un umbral posterior a now (ventana de anticipación)', async () => {
         const now = new Date('2026-01-01T10:00:00Z');
         await scanAndSendReminders(now);
-        const threshold = findDueSoon.mock.calls[0][0] as Date;
+        const threshold = findDueSoon.mock.calls[0][1] as Date;
         expect(threshold.getTime()).toBeGreaterThan(now.getTime());
+    });
+
+    /**
+     * Sin límite inferior, toda tarea ya vencida y sin marca salía como "vence pronto":
+     * importar un cronograma con fechas pasadas mandaba un correo por tarea (19 de golpe
+     * en Impulsa-VC), y el primer barrido tras un despliegue hacía lo mismo. La ventana
+     * empieza 24 h antes de now porque `dueDate` es la medianoche UTC del día: una tarea
+     * que vence hoy sigue avisándose; una que venció hace días, no.
+     */
+    it('la ventana de vencimiento va de now − 24 h a now + 24 h, en tareas y tareas de proyecto', async () => {
+        const now = new Date('2026-10-30T23:00:00Z');
+        await scanAndSendReminders(now);
+        for (const finder of [findDueSoon, findTasksDueSoon]) {
+            const [from, threshold] = finder.mock.calls[0] as [Date, Date];
+            expect(from.toISOString()).toBe('2026-10-29T23:00:00.000Z');
+            expect(threshold.toISOString()).toBe('2026-10-31T23:00:00.000Z');
+        }
     });
 
     it('si notify falla en una tarea, sigue procesando el resto y no marca esa', async () => {
@@ -145,7 +162,7 @@ describe('scanAndSendReminders', () => {
     it('proyecto usa una ventana mayor (3 días) que las tareas (24 h)', async () => {
         const now = new Date('2026-01-01T10:00:00Z');
         await scanAndSendReminders(now);
-        const taskThreshold = findDueSoon.mock.calls[0][0] as Date;
+        const taskThreshold = findDueSoon.mock.calls[0][1] as Date;
         const projectThreshold = findProjectsDueSoon.mock.calls[0][0] as Date;
         expect(projectThreshold.getTime()).toBeGreaterThan(taskThreshold.getTime());
     });

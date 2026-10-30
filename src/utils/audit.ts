@@ -11,7 +11,10 @@ interface AuditEntry {
 
 export async function logAudit(req: Request, entry: AuditEntry): Promise<void> {
     try {
-        const userId = (req as any).userId || null;
+        // `audit_logs.userId` es FK a profiles.id: va el Profile.id, no el User.id.
+        // Con el User.id la FK fallaba para todo usuario con ids distintos y la entrada
+        // se perdía en silencio (el catch de abajo se traga el error).
+        const userId = (req as any).user?.profileId || null;
         const organizationId = req.headers['x-organization-id'] as string || null;
         const ipAddress = req.ip || (req.connection as any)?.remoteAddress || null;
 

@@ -44,3 +44,10 @@ export const MAX_TEMPLATE_CHARS = 40000;
 
 /** Tope de tareas por archivo de plantilla. El límite es inclusivo. */
 export const MAX_TEMPLATE_TASKS = 100;
+
+/**
+ * Tope del archivo JSON de tareas (`/projects/:projectId/tasks/sync/*`). Un export lleva
+ * descripciones, entregables y comentarios de hasta 1000 tareas: los 40.000 caracteres
+ * de la plantilla Markdown no alcanzan. Lo lee `parseSyncDocument`, no un modelo.
+ */
+export const MAX_SYNC_FILE_CHARS = 5_000_000;

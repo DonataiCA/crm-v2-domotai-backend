@@ -3,7 +3,7 @@ import { sendError } from '../utils/error';
 import jwt from 'jsonwebtoken';
 import { JwtRepository } from '../repositories/jwt.repository';
 import { prisma } from '../config/prisma';
-import { isAdminRole, normalizeRole } from '../constants/roles';
+import { isAdminRole, isTeamRole, normalizeRole } from '../constants/roles';
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -109,6 +109,19 @@ export const forbidProfileRoles = (...roles: string[]) =>
         }
         next();
     };
+
+/**
+ * Deja pasar sólo a los roles del equipo (admin, salesman, freelancer). Es el guard
+ * positivo de las operaciones que reescriben las tareas de un proyecto en bloque
+ * (importar, sincronizar, exportar): pmo, client y viewer ven el proyecto pero no lo
+ * editan, y hasta ahora eso sólo lo imponía la interfaz.
+ */
+export const requireTeamRole = (req: Request, res: Response, next: NextFunction) => {
+    if (!isTeamRole((req as any).user?.role)) {
+        return sendError(res, 403, 'Access denied. Team role required.');
+    }
+    next();
+};
 
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
     try {

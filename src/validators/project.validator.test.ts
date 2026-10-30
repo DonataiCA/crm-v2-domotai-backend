@@ -412,3 +412,25 @@ describe('updatePhaseSchema', () => {
         expect(updatePhaseSchema.safeParse({ status: 'pendiente' }).success).toBe(false);
     });
 });
+
+describe('taskSyncPreviewSchema / applyTaskSyncSchema', () => {
+    const document = { fileName: 'tasks-andina-2026-10-30.json', content: '{"format":"crm-domotai-tasks"}' };
+
+    it('acepta un export grande, por encima del tope de la plantilla Markdown', async () => {
+        const { taskSyncPreviewSchema } = await import('./project.validator');
+        const { MAX_SYNC_FILE_CHARS } = await import('../constants/document');
+        expect(MAX_SYNC_FILE_CHARS).toBeGreaterThan(MAX_TEMPLATE_CHARS);
+        const content = 'x'.repeat(MAX_TEMPLATE_CHARS + 1);
+        expect(taskSyncPreviewSchema.safeParse({ document: { ...document, content } }).success).toBe(true);
+        const tooBig = 'x'.repeat(MAX_SYNC_FILE_CHARS + 1);
+        expect(taskSyncPreviewSchema.safeParse({ document: { ...document, content: tooBig } }).success).toBe(false);
+    });
+
+    it('apply exige el planHash de la vista previa y acepta conflictos a aplicar', async () => {
+        const { applyTaskSyncSchema } = await import('./project.validator');
+        expect(applyTaskSyncSchema.safeParse({ document }).success).toBe(false);
+        const ok = applyTaskSyncSchema.safeParse({ document, planHash: 'a'.repeat(40) });
+        expect(ok.success && ok.data.applyConflicts).toEqual([]);
+        expect(applyTaskSyncSchema.safeParse({ document, planHash: 'a'.repeat(40), applyConflicts: ['t-1'] }).success).toBe(true);
+    });
+});
