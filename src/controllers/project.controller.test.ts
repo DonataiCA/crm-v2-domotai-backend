@@ -6,7 +6,7 @@ const {
     findById, addMember, getMembers, removeMember,
     taskFindFirst, commentCreate, commentDeleteMany,
     gitMetricFindMany, gitCommitFindMany, orgMemberFindFirst,
-    getImportContext, createTasks,
+    getImportContext, createTasks, repoCreate, repoUpdate, findAll, count, profileFindUnique,
 } = vi.hoisted(() => ({
     findById: vi.fn(),
     addMember: vi.fn(),
@@ -20,11 +20,17 @@ const {
     orgMemberFindFirst: vi.fn(),
     getImportContext: vi.fn(),
     createTasks: vi.fn(),
+    repoCreate: vi.fn(),
+    repoUpdate: vi.fn(),
+    findAll: vi.fn(),
+    count: vi.fn(),
+    profileFindUnique: vi.fn(),
 }));
 
 vi.mock('../repositories/project.repository', () => ({
     ProjectRepository: {
         findById, addMember, getMembers, removeMember, getImportContext, createTasks,
+        create: repoCreate, update: repoUpdate, findAll, count,
     },
 }));
 
@@ -35,6 +41,7 @@ vi.mock('../config/prisma', () => ({
         gitMetric: { findMany: gitMetricFindMany },
         gitCommit: { findMany: gitCommitFindMany },
         organizationMember: { findFirst: orgMemberFindFirst },
+        profile: { findUnique: profileFindUnique },
     },
 }));
 
@@ -59,6 +66,40 @@ function fakeRes() {
 }
 
 beforeEach(() => { vi.clearAllMocks(); });
+
+// Prisma 6 rechaza un DateTime como '2026-03-01'; el controlador convertía
+// paymentDate pero no las fechas del cobro recurrente.
+describe('ProjectController.create / update: fechas', () => {
+    const dates = {
+        startDate: '2026-03-01',
+        paymentDate: '2026-03-05',
+        recurringStartDate: '2026-03-01',
+        recurringEndDate: '2026-12-31',
+    };
+
+    it('create convierte a Date todas las fechas del proyecto', async () => {
+        repoCreate.mockResolvedValue({ id: 'p1', name: 'P' });
+        const req = fakeReq({ body: { name: 'P', ...dates }, user: { profileId: 'prof-1' } });
+        await ProjectController.create(req, fakeRes());
+
+        const data = repoCreate.mock.calls[0][0];
+        for (const key of Object.keys(dates)) {
+            expect(data[key], key).toBeInstanceOf(Date);
+        }
+    });
+
+    it('update convierte a Date todas las fechas del proyecto', async () => {
+        findById.mockResolvedValue({ id: 'p1' });
+        repoUpdate.mockResolvedValue({ id: 'p1', name: 'P' });
+        const req = fakeReq({ params: { id: 'p1' }, body: dates });
+        await ProjectController.update(req, fakeRes());
+
+        const data = repoUpdate.mock.calls[0][1];
+        for (const key of Object.keys(dates)) {
+            expect(data[key], key).toBeInstanceOf(Date);
+        }
+    });
+});
 
 // C1: addMember creaba el ProjectTeamMember sin comprobar que el proyecto
 // perteneciera a la organización del request — org A se insertaba como

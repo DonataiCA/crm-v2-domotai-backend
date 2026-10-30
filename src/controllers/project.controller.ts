@@ -21,6 +21,17 @@ import {
     DEFAULT_TASK_STATUS,
 } from '../constants/enums';
 
+const PROJECT_DATE_FIELDS = ['startDate', 'endDate', 'paymentDate', 'recurringStartDate', 'recurringEndDate'] as const;
+
+/** Prisma 6 no acepta '2026-03-01' en un DateTime: convierte las fechas presentes a Date. */
+function coerceProjectDates<T extends Record<string, any>>(body: T): T {
+    const out: Record<string, any> = body;
+    for (const field of PROJECT_DATE_FIELDS) {
+        if (out[field]) out[field] = new Date(out[field]);
+    }
+    return body;
+}
+
 export const ProjectController = {
     index: async (req: Request, res: Response) => {
         try {
@@ -87,11 +98,7 @@ export const ProjectController = {
             // JWT's User.id and violates the constraint.
             const profileId = (req as any).user?.profileId;
 
-            const body = { ...req.body };
-            // Coerce date strings to Date so Prisma accepts them
-            if (body.startDate) body.startDate = new Date(body.startDate);
-            if (body.endDate) body.endDate = new Date(body.endDate);
-            if (body.paymentDate) body.paymentDate = new Date(body.paymentDate);
+            const body = coerceProjectDates({ ...req.body });
 
             const project = await ProjectRepository.create({
                 ...body,
@@ -112,10 +119,7 @@ export const ProjectController = {
             const existing = await ProjectRepository.findById(req.params.id, orgId);
             if (!existing) return sendError(res, 404, 'Project not found');
 
-            const body = { ...req.body };
-            if (body.startDate) body.startDate = new Date(body.startDate);
-            if (body.endDate) body.endDate = new Date(body.endDate);
-            if (body.paymentDate) body.paymentDate = new Date(body.paymentDate);
+            const body = coerceProjectDates({ ...req.body });
 
             const project = await ProjectRepository.update(req.params.id, body, orgId);
             if (!project) return sendError(res, 404, 'Project not found');

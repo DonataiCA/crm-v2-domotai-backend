@@ -28,6 +28,10 @@ export type PhaseStatus = (typeof PHASE_STATUSES)[number];
 export const INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+/** Minúscula, igual que `PricingType` del frontend y el default de `projects.pricingType`. */
+export const PRICING_TYPES = ['flat', 'recurring'] as const;
+export type PricingType = (typeof PRICING_TYPES)[number];
+
 /**
  * Minúscula a propósito, y con `create_task`/`edit_task`: es el vocabulario que
  * `portal.controller.ts` comprueba de verdad (líneas 382, 463 y 515) y el que

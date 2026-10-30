@@ -47,6 +47,68 @@ describe('createProjectSchema.status', () => {
     });
 });
 
+// El `.strip()` descartaba en silencio todo lo que no estuviera declarado: el PUT
+// devolvía 200 pero el PRD, el precio recurrente y los datos de git no se guardaban.
+describe('createProjectSchema conserva las columnas que escribe el frontend', () => {
+    const full = {
+        name: 'P',
+        prd: '# PRD\n\nAlcance del proyecto',
+        complexity: 'high',
+        pricingType: 'recurring',
+        paymentDate: '2026-03-01',
+        recurringStartDate: '2026-03-01',
+        recurringEndDate: '2026-12-31',
+        commissionPaid: true,
+        totalHours: 120.5,
+        repositoryUrl: 'https://github.com/acme/app',
+        repositoryName: 'app',
+        githubOwner: 'acme',
+        defaultBranch: 'main',
+        productionUrl: 'https://app.acme.test',
+    };
+
+    it('no descarta ninguno de los campos', () => {
+        const result = createProjectSchema.safeParse(full);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(full)) {
+            expect(result.data, key).toHaveProperty(key, (full as any)[key]);
+        }
+    });
+
+    it('acepta null en los campos opcionales, que es lo que manda el formulario vacío', () => {
+        const nulls = Object.fromEntries(
+            Object.keys(full).filter(k => k !== 'name' && k !== 'commissionPaid').map(k => [k, null]),
+        );
+        expect(createProjectSchema.safeParse({ name: 'P', ...nulls }).success).toBe(true);
+    });
+
+    it('acepta totalHours como string, igual que price', () => {
+        const result = createProjectSchema.safeParse({ name: 'P', totalHours: '12.5' });
+        expect(result.success && result.data.totalHours).toBe(12.5);
+    });
+
+    it('rechaza un pricingType que no es flat ni recurring', () => {
+        expect(createProjectSchema.safeParse({ name: 'P', pricingType: 'hourly' }).success).toBe(false);
+    });
+
+    it('updateProjectSchema guarda el PRD solo, sin exigir el nombre', () => {
+        const result = updateProjectSchema.safeParse({ prd: 'nuevo PRD' });
+        expect(result.success && result.data.prd).toBe('nuevo PRD');
+    });
+
+    it('sigue sin dejar pasar columnas que el cliente no debe escribir', () => {
+        const result = createProjectSchema.safeParse({
+            name: 'P', organizationId: 'otra-org', createdBy: 'x', monitorApiKey: 'k',
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(result.data).not.toHaveProperty('organizationId');
+        expect(result.data).not.toHaveProperty('createdBy');
+        expect(result.data).not.toHaveProperty('monitorApiKey');
+    });
+});
+
 describe('updateProjectSchema', () => {
     it('hereda la restricción de estado y su tolerancia', () => {
         expect(updateProjectSchema.safeParse({ status: 'ARCHIVED' }).success).toBe(true);
@@ -286,3 +348,4 @@ describe('importTasksSchema', () => {
         expect(result.success && result.data).toEqual({ document: doc() });
     });
 });
+

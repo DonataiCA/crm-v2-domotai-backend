@@ -4,6 +4,7 @@ import {
     TASK_STATUSES,
     TASK_PRIORITIES,
     PHASE_STATUSES,
+    PRICING_TYPES,
     normalizeProjectStatus,
     normalizeTaskStatus,
     normalizeTaskPriority,
@@ -40,14 +41,34 @@ export function isInvertedDateRange(
     return endTime < startTime;
 }
 
+/**
+ * Todas las columnas de `Project` que el cliente puede escribir. Lo que no esté aquí
+ * lo descarta `.strip()` sin avisar (el PUT devuelve 200 y no guarda nada), así que
+ * una columna nueva que edite el frontend se declara aquí en el mismo cambio.
+ * `organizationId`, `createdBy`, `monitorApiKey` y los marcadores de recordatorio
+ * quedan fuera a propósito: los pone el servidor.
+ */
 export const createProjectSchema = z.object({
     name: z.string().min(1, 'Name is required').max(200),
     description: z.string().max(10000).optional().nullable(),
     status: tolerantEnum(PROJECT_STATUSES, normalizeProjectStatus).optional(),
+    complexity: z.string().max(50).optional().nullable(),
     price: z.number().or(z.string().transform(Number)).optional().nullable(),
+    pricingType: z.enum(PRICING_TYPES).optional().nullable(),
     revenue: z.number().or(z.string().transform(Number)).optional().nullable(),
+    paymentDate: z.string().optional().nullable(),
+    recurringStartDate: z.string().optional().nullable(),
+    recurringEndDate: z.string().optional().nullable(),
+    commissionPaid: z.boolean().optional(),
+    totalHours: z.number().or(z.string().transform(Number)).optional().nullable(),
+    prd: z.string().max(200000).optional().nullable(),
     startDate: z.string().optional().nullable(),
     endDate: z.string().optional().nullable(),
+    repositoryUrl: z.string().max(2000).optional().nullable(),
+    repositoryName: z.string().max(200).optional().nullable(),
+    githubOwner: z.string().max(200).optional().nullable(),
+    defaultBranch: z.string().max(200).optional().nullable(),
+    productionUrl: z.string().max(2000).optional().nullable(),
     projectLeadId: z.string().uuid().optional().nullable(),
 }).strip();
 
