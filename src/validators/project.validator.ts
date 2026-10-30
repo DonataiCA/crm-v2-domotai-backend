@@ -208,6 +208,11 @@ export const reorderProjectLinksSchema = z.object({
     orderedIds: z.array(z.string().uuid()).min(1, 'orderedIds is required'),
 }).strip();
 
+/** Orden de una columna del Kanban: la posición en el array es el `orderIndex`. */
+export const reorderProjectTasksSchema = z.object({
+    orderedIds: z.array(z.string().uuid()).min(1, 'orderedIds is required').max(5000),
+}).strip();
+
 export const createTaskDeliverableSchema = z.object({
     title: z.string().min(1, 'Title is required').max(500),
     orderIndex: z.number().int().optional(),

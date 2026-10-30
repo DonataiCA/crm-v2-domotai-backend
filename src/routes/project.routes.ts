@@ -3,7 +3,8 @@ import { ProjectController } from '../controllers/project.controller';
 import { ProjectMonitorController } from '../controllers/project-monitor.controller';
 import { ProjectLinkController } from '../controllers/project-link.controller';
 import { TaskDeliverableController } from '../controllers/task-deliverable.controller';
-import { authenticate, requireOrgMembership } from '../middlewares/auth.middleware';
+import { TaskSyncController } from '../controllers/task-sync.controller';
+import { authenticate, requireOrgMembership, requireTeamRole } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
     createProjectSchema,
@@ -17,6 +18,7 @@ import {
     createProjectLinkSchema,
     updateProjectLinkSchema,
     reorderProjectLinksSchema,
+    reorderProjectTasksSchema,
     createTaskDeliverableSchema,
     updateTaskDeliverableSchema,
 } from '../validators/project.validator';
@@ -51,7 +53,7 @@ router.post('/:projectId/generate-tasks', ProjectController.generateTasks);
 router.post('/:projectId/chat-task', validate(chatTaskSchema), ProjectController.chatTask);
 
 // Alta de tareas desde la plantilla Markdown. Sin IA: la lee `parseTaskTemplate`.
-router.post('/:projectId/import-tasks', validate(importTasksSchema), ProjectController.importTasks);
+router.post('/:projectId/import-tasks', requireTeamRole, validate(importTasksSchema), ProjectController.importTasks);
 
 // Phases
 router.post('/:projectId/phases', validate(createPhaseSchema), ProjectController.createPhase);
@@ -60,6 +62,8 @@ router.delete('/phases/:phaseId', ProjectController.deletePhase);
 
 // Project Tasks
 router.post('/:projectId/tasks', validate(createProjectTaskSchema), ProjectController.createTask);
+// Orden de una columna del Kanban (sólo equipo, como el resto de operaciones en bloque).
+router.put('/:projectId/tasks/reorder', requireTeamRole, validate(reorderProjectTasksSchema), TaskSyncController.reorder);
 router.put('/project-tasks/:taskId', validate(updateProjectTaskSchema), ProjectController.updateTask);
 router.delete('/project-tasks/:taskId', ProjectController.deleteTask);
 

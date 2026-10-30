@@ -142,3 +142,23 @@ describe('forbidProfileRoles', () => {
         expect(res.status).not.toHaveBeenCalled();
     });
 });
+
+describe('requireTeamRole', () => {
+    it.each(['pmo', 'client', 'viewer', undefined])('bloquea con 403 al rol %s', async (role) => {
+        const { requireTeamRole } = await import('./auth.middleware');
+        const next = vi.fn();
+        const res = fakeRes();
+        requireTeamRole(fakeReq({ user: { profileId: 'p1', role } }), res, next);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each(['admin', 'Salesman', 'freelancer'])('deja pasar al rol de equipo %s', async (role) => {
+        const { requireTeamRole } = await import('./auth.middleware');
+        const next = vi.fn();
+        const res = fakeRes();
+        requireTeamRole(fakeReq({ user: { profileId: 'p1', role } }), res, next);
+        expect(next).toHaveBeenCalledOnce();
+        expect(res.status).not.toHaveBeenCalled();
+    });
+});
