@@ -43,6 +43,7 @@ export const ProjectController = {
 
             const mine = req.query.mine === 'true';
             const userId = (req as any).userId as string | undefined;
+            const profileId = (req as any).user?.profileId as string | undefined;
 
             // Check if user is a client - if so, only show shared projects
             let clientEmail: string | undefined;
@@ -57,7 +58,8 @@ export const ProjectController = {
                 search: req.query.search as string | undefined,
                 status: req.query.status as string | undefined,
                 projectLeadId: req.query.projectLeadId as string | undefined,
-                mine: mine && userId ? userId : undefined,
+                // projectLeadId y teamMembers.userId son Profile.id, no User.id.
+                mine: mine && profileId ? profileId : undefined,
                 clientEmail,
             };
 
@@ -330,7 +332,7 @@ export const ProjectController = {
                     title: `Task reassigned: ${task.title}`,
                     entityType: 'ProjectTask',
                     entityId: task.id,
-                    actorId: (req as any).userId,
+                    actorId: (req as any).user?.profileId,
                     recipientUserId: req.body.assignedTo,
                     metadata: {
                         taskTitle: task.title,

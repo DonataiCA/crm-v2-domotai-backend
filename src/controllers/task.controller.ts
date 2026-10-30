@@ -62,7 +62,8 @@ export const TaskController = {
         try {
             const organizationId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { title, description, status, priority, progress, dueDate, reminderDate, assignedTo, contactId, leadId, projectId, companyId } = req.body;
 
             if (!title) return sendError(res, 400, 'Title is required');
@@ -80,7 +81,7 @@ export const TaskController = {
                 leadId,
                 projectId,
                 companyId,
-                createdBy: userId,
+                createdBy: profileId,
                 organizationId,
             });
 
@@ -194,7 +195,8 @@ export const TaskController = {
         try {
             const organizationId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { taskId } = req.params;
             const { content } = req.body;
 
@@ -207,21 +209,21 @@ export const TaskController = {
                 taskId,
                 organizationId,
                 content,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(comment);
 
             // Use already-fetched task data from findById above (existing variable)
             // and comment.creator from addComment's include
-            if (existing.assignedTo && existing.assignedTo !== userId) {
+            if (existing.assignedTo && existing.assignedTo !== profileId) {
                 await notify({
                     organizationId,
                     type: 'TASK_COMMENT',
                     title: `New comment on: ${existing.title}`,
                     entityType: 'Task',
                     entityId: taskId,
-                    actorId: userId,
+                    actorId: profileId,
                     recipientUserId: existing.assignedTo,
                     metadata: {
                         taskTitle: existing.title,
@@ -252,7 +254,8 @@ export const TaskController = {
         try {
             const organizationId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { taskId } = req.params;
             const { title, url, linkType } = req.body;
 
@@ -267,7 +270,7 @@ export const TaskController = {
                 title,
                 url,
                 linkType,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(link);

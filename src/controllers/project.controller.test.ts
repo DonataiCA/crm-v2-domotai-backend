@@ -101,6 +101,26 @@ describe('ProjectController.create / update: fechas', () => {
     });
 });
 
+// projectLeadId y teamMembers.userId guardan Profile.id; el filtro "mine"
+// usaba req.userId (User.id) y solo funcionaba si ambos ids coincidían.
+describe('ProjectController.index: filtro mine', () => {
+    it('filtra por el Profile.id del usuario, no por su User.id', async () => {
+        findAll.mockResolvedValue([]);
+        count.mockResolvedValue(0);
+        profileFindUnique.mockResolvedValue({ role: 'salesman', email: 'a@b.test' });
+
+        const req = fakeReq({
+            query: { mine: 'true' },
+            userId: 'user-1',
+            user: { profileId: 'prof-1', role: 'salesman' },
+        });
+        await ProjectController.index(req, fakeRes());
+
+        expect(findAll.mock.calls[0][3].mine).toBe('prof-1');
+        expect(count.mock.calls[0][1].mine).toBe('prof-1');
+    });
+});
+
 // C1: addMember creaba el ProjectTeamMember sin comprobar que el proyecto
 // perteneciera a la organización del request — org A se insertaba como
 // miembro de un proyecto de org B conociendo el projectId.

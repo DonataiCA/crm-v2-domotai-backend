@@ -47,7 +47,8 @@ export const OrganizationController = {
 
     create: async (req: Request, res: Response) => {
         try {
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { name, slug, logoUrl, colorScheme } = req.body;
 
             if (!name) {
@@ -59,7 +60,7 @@ export const OrganizationController = {
                 slug,
                 logoUrl,
                 colorScheme,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(organization);
