@@ -24,3 +24,11 @@ export const updateTaskSchema = createTaskSchema.partial();
 export const addCommentSchema = z.object({
     content: z.string().min(1, 'Comment content is required').max(10000),
 }).strip();
+
+/**
+ * Cuerpo de `PUT /tasks/bulk`. Antes el resto del body iba tal cual a updateMany,
+ * así que se podía mover tareas de organización o reescribir su autor.
+ */
+export const bulkUpdateTaskSchema = createTaskSchema.omit({ title: true }).partial().extend({
+    ids: z.array(z.string().uuid()).min(1, 'ids array is required'),
+}).strip();

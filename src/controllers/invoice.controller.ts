@@ -74,11 +74,12 @@ export const InvoiceController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const invoice = await InvoiceRepository.create({
                 ...withDates(req.body),
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(invoice);
@@ -150,7 +151,7 @@ export const InvoiceController = {
                     title: `Invoice ${invoice.invoiceNumber} sent`,
                     entityType: 'Invoice',
                     entityId: invoice.id,
-                    actorId: (req as any).userId,
+                    actorId: (req as any).user?.profileId,
                     recipientEmail: invoice.contact.email,
                     metadata: { invoiceNumber: invoice.invoiceNumber, contactName: invoice.contact.name },
                 });

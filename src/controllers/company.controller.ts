@@ -51,11 +51,12 @@ export const CompanyController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const company = await CompanyRepository.create({
                 ...req.body,
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(company);

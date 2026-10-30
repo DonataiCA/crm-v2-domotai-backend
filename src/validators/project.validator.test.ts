@@ -7,6 +7,8 @@ import {
     createPhaseSchema,
     createProjectTaskSchema,
     importTasksSchema,
+    updateProjectTaskSchema,
+    updatePhaseSchema,
 } from './project.validator';
 import {
     MAX_CHAT_MESSAGE_CHARS,
@@ -44,6 +46,68 @@ describe('createProjectSchema.status', () => {
 
     it('sigue siendo opcional', () => {
         expect(createProjectSchema.safeParse({ name: 'P' }).success).toBe(true);
+    });
+});
+
+// El `.strip()` descartaba en silencio todo lo que no estuviera declarado: el PUT
+// devolvía 200 pero el PRD, el precio recurrente y los datos de git no se guardaban.
+describe('createProjectSchema conserva las columnas que escribe el frontend', () => {
+    const full = {
+        name: 'P',
+        prd: '# PRD\n\nAlcance del proyecto',
+        complexity: 'high',
+        pricingType: 'recurring',
+        paymentDate: '2026-03-01',
+        recurringStartDate: '2026-03-01',
+        recurringEndDate: '2026-12-31',
+        commissionPaid: true,
+        totalHours: 120.5,
+        repositoryUrl: 'https://github.com/acme/app',
+        repositoryName: 'app',
+        githubOwner: 'acme',
+        defaultBranch: 'main',
+        productionUrl: 'https://app.acme.test',
+    };
+
+    it('no descarta ninguno de los campos', () => {
+        const result = createProjectSchema.safeParse(full);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(full)) {
+            expect(result.data, key).toHaveProperty(key, (full as any)[key]);
+        }
+    });
+
+    it('acepta null en los campos opcionales, que es lo que manda el formulario vacío', () => {
+        const nulls = Object.fromEntries(
+            Object.keys(full).filter(k => k !== 'name' && k !== 'commissionPaid').map(k => [k, null]),
+        );
+        expect(createProjectSchema.safeParse({ name: 'P', ...nulls }).success).toBe(true);
+    });
+
+    it('acepta totalHours como string, igual que price', () => {
+        const result = createProjectSchema.safeParse({ name: 'P', totalHours: '12.5' });
+        expect(result.success && result.data.totalHours).toBe(12.5);
+    });
+
+    it('rechaza un pricingType que no es flat ni recurring', () => {
+        expect(createProjectSchema.safeParse({ name: 'P', pricingType: 'hourly' }).success).toBe(false);
+    });
+
+    it('updateProjectSchema guarda el PRD solo, sin exigir el nombre', () => {
+        const result = updateProjectSchema.safeParse({ prd: 'nuevo PRD' });
+        expect(result.success && result.data.prd).toBe('nuevo PRD');
+    });
+
+    it('sigue sin dejar pasar columnas que el cliente no debe escribir', () => {
+        const result = createProjectSchema.safeParse({
+            name: 'P', organizationId: 'otra-org', createdBy: 'x', monitorApiKey: 'k',
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(result.data).not.toHaveProperty('organizationId');
+        expect(result.data).not.toHaveProperty('createdBy');
+        expect(result.data).not.toHaveProperty('monitorApiKey');
     });
 });
 
@@ -284,5 +348,67 @@ describe('importTasksSchema', () => {
         });
 
         expect(result.success && result.data).toEqual({ document: doc() });
+    });
+});
+
+// Los PUT de tarea y fase no tenían validador: el controlador esparcía req.body
+// en Prisma y un cliente podía reescribir organizationId, projectId o createdBy.
+describe('updateProjectTaskSchema', () => {
+    it('conserva todo lo que manda el frontend (ProjectTaskPayload)', () => {
+        const payload = {
+            title: 'T', description: 'd', conclusion: 'c', status: 'COMPLETED', priority: 'HIGH',
+            phaseId: PHASE_ID, orderIndex: 3, startDate: '2026-10-01', dueDate: '2026-10-05',
+            completedAt: '2026-10-05T12:00:00Z', assignedTo: PHASE_ID, progress: 100,
+        };
+        const result = updateProjectTaskSchema.safeParse(payload);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(payload)) expect(result.data, key).toHaveProperty(key);
+    });
+
+    it('acepta un cambio de estado suelto (arrastre en el Kanban)', () => {
+        const result = updateProjectTaskSchema.safeParse({ status: 'in progress' });
+        expect(result.success && result.data.status).toBe('IN_PROGRESS');
+    });
+
+    it('permite sacar la tarea de su fase con phaseId null', () => {
+        expect(updateProjectTaskSchema.safeParse({ phaseId: null }).success).toBe(true);
+    });
+
+    it('descarta las columnas que solo escribe el servidor', () => {
+        const result = updateProjectTaskSchema.safeParse({
+            title: 'T', organizationId: 'otra', projectId: 'otro', createdBy: 'x',
+            dueReminderSentAt: null, createdByGuest: true,
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(Object.keys(result.data)).toEqual(['title']);
+    });
+
+    it('rechaza un progreso fuera de 0..100 y un estado inventado', () => {
+        expect(updateProjectTaskSchema.safeParse({ progress: 140 }).success).toBe(false);
+        expect(updateProjectTaskSchema.safeParse({ status: 'EN_LIMBO' }).success).toBe(false);
+    });
+});
+
+describe('updatePhaseSchema', () => {
+    it('conserva todo lo que manda el frontend (ProjectPhasePayload)', () => {
+        const payload = {
+            name: 'Phase 1', description: 'd', status: 'completed', orderIndex: 2,
+            startDate: '2026-10-01', endDate: '2026-10-31',
+        };
+        const result = updatePhaseSchema.safeParse(payload);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(payload)) expect(result.data, key).toHaveProperty(key);
+    });
+
+    it('descarta projectId y createdBy', () => {
+        const result = updatePhaseSchema.safeParse({ name: 'F', projectId: 'otro', createdBy: 'x' });
+        expect(result.success && Object.keys(result.data)).toEqual(['name']);
+    });
+
+    it('rechaza un estado de fase inventado', () => {
+        expect(updatePhaseSchema.safeParse({ status: 'pendiente' }).success).toBe(false);
     });
 });

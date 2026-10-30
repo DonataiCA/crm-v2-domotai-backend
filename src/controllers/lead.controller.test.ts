@@ -158,6 +158,20 @@ describe('LeadController.update — resolución de la etapa', () => {
     });
 });
 
+describe('LeadController.create — autoría', () => {
+    it('guarda createdBy con el Profile.id, no con el User.id', async () => {
+        findStages.mockResolvedValue([{ slug: 'nuevo', name: 'Nuevo', category: 'standard' }]);
+        create.mockResolvedValue({ id: 'l1', name: 'L' });
+
+        await LeadController.create(
+            fakeReq({ body: { name: 'L', stage: 'nuevo', pipelineId: 'p1' }, user: { profileId: 'prof-1' } }),
+            fakeRes(),
+        );
+
+        expect(create.mock.calls[0][0].createdBy).toBe('prof-1');
+    });
+});
+
 describe('LeadController.create — resolución de la etapa', () => {
     it('rechaza con 400 una etapa que el pipeline no tiene', async () => {
         findStages.mockResolvedValue([{ slug: 'nuevo', name: 'Nuevo', category: 'standard' }]);

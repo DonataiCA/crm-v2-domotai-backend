@@ -4,6 +4,7 @@ import {
     TASK_STATUSES,
     TASK_PRIORITIES,
     PHASE_STATUSES,
+    PRICING_TYPES,
     normalizeProjectStatus,
     normalizeTaskStatus,
     normalizeTaskPriority,
@@ -40,14 +41,34 @@ export function isInvertedDateRange(
     return endTime < startTime;
 }
 
+/**
+ * Todas las columnas de `Project` que el cliente puede escribir. Lo que no esté aquí
+ * lo descarta `.strip()` sin avisar (el PUT devuelve 200 y no guarda nada), así que
+ * una columna nueva que edite el frontend se declara aquí en el mismo cambio.
+ * `organizationId`, `createdBy`, `monitorApiKey` y los marcadores de recordatorio
+ * quedan fuera a propósito: los pone el servidor.
+ */
 export const createProjectSchema = z.object({
     name: z.string().min(1, 'Name is required').max(200),
     description: z.string().max(10000).optional().nullable(),
     status: tolerantEnum(PROJECT_STATUSES, normalizeProjectStatus).optional(),
+    complexity: z.string().max(50).optional().nullable(),
     price: z.number().or(z.string().transform(Number)).optional().nullable(),
+    pricingType: z.enum(PRICING_TYPES).optional().nullable(),
     revenue: z.number().or(z.string().transform(Number)).optional().nullable(),
+    paymentDate: z.string().optional().nullable(),
+    recurringStartDate: z.string().optional().nullable(),
+    recurringEndDate: z.string().optional().nullable(),
+    commissionPaid: z.boolean().optional(),
+    totalHours: z.number().or(z.string().transform(Number)).optional().nullable(),
+    prd: z.string().max(200000).optional().nullable(),
     startDate: z.string().optional().nullable(),
     endDate: z.string().optional().nullable(),
+    repositoryUrl: z.string().max(2000).optional().nullable(),
+    repositoryName: z.string().max(200).optional().nullable(),
+    githubOwner: z.string().max(200).optional().nullable(),
+    defaultBranch: z.string().max(200).optional().nullable(),
+    productionUrl: z.string().max(2000).optional().nullable(),
     projectLeadId: z.string().uuid().optional().nullable(),
 }).strip();
 
@@ -142,6 +163,37 @@ export const createProjectTaskSchema = z.object({
         });
     }
 });
+
+/**
+ * Cuerpo de `PUT /projects/project-tasks/:taskId`. Sin él el controlador esparcía
+ * req.body en Prisma (organizationId, projectId, createdBy...). Refleja
+ * `ProjectTaskPayload` del frontend; el orden de fechas lo comprueba el
+ * controlador contra la fila existente.
+ */
+export const updateProjectTaskSchema = z.object({
+    title: z.string().min(1, 'Title is required').max(500).optional(),
+    description: z.string().max(10000).optional().nullable(),
+    conclusion: z.string().max(10000).optional().nullable(),
+    status: tolerantEnum(TASK_STATUSES, normalizeTaskStatus).optional(),
+    priority: tolerantEnum(TASK_PRIORITIES, normalizeTaskPriority).optional().nullable(),
+    phaseId: z.string().uuid().optional().nullable(),
+    orderIndex: z.number().int().optional().nullable(),
+    assignedTo: z.string().uuid().optional().nullable(),
+    startDate: z.string().optional().nullable(),
+    dueDate: z.string().optional().nullable(),
+    completedAt: z.string().optional().nullable(),
+    progress: z.number().int().min(0).max(100).optional(),
+}).strip();
+
+/** Cuerpo de `PUT /projects/phases/:phaseId`. Refleja `ProjectPhasePayload` del frontend. */
+export const updatePhaseSchema = z.object({
+    name: z.string().min(1, 'Phase name is required').max(200).optional(),
+    description: z.string().max(10000).optional().nullable(),
+    status: tolerantEnum(PHASE_STATUSES, normalizePhaseStatus).optional().nullable(),
+    orderIndex: z.number().int().optional().nullable(),
+    startDate: z.string().optional().nullable(),
+    endDate: z.string().optional().nullable(),
+}).strip();
 
 export const createProjectLinkSchema = z.object({
     title: z.string().min(1, 'Title is required').max(200),

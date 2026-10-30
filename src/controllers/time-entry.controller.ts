@@ -40,11 +40,12 @@ export const TimeEntryController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const entry = await TimeEntryRepository.create({
                 ...req.body,
                 organizationId: orgId,
-                userId,
+                userId: profileId,
             });
 
             res.status(201).json(entry);
@@ -83,11 +84,12 @@ export const TimeEntryController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const entry = await TimeEntryRepository.startTimer({
                 ...req.body,
                 organizationId: orgId,
-                userId,
+                userId: profileId,
             });
 
             res.status(201).json(entry);

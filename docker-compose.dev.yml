@@ -1,0 +1,49 @@
+# Entorno local de desarrollo: Postgres + Redis + Mailpit.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Puertos fuera de los por defecto (5432/6379/1025) para no chocar con otros
+# proyectos de la máquina. Deben coincidir con DATABASE_URL, REDIS_URL y SMTP_*
+# del `.env` (ver env.example). Mailpit captura todo el correo saliente:
+# bandeja en http://localhost:8026. Nada de esto se usa en producción
+# (allí está deploy/docker-compose.yml).
+name: domotai-crm-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: domotai-dev-postgres
+    environment:
+      POSTGRES_DB: domotaicrm
+      POSTGRES_USER: domotai
+      POSTGRES_PASSWORD: domotai
+    ports:
+      - "127.0.0.1:5450:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U domotai -d domotaicrm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: domotai-dev-redis
+    ports:
+      - "127.0.0.1:6390:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: domotai-dev-mailpit
+    ports:
+      - "127.0.0.1:1026:1025"
+      - "127.0.0.1:8026:8025"
+
+volumes:
+  pgdata:

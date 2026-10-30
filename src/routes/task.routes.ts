@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { TaskController } from '../controllers/task.controller';
 import { authenticate, requireOrgMembership } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
-import { createTaskSchema, updateTaskSchema, addCommentSchema } from '../validators/task.validator';
+import { createTaskSchema, updateTaskSchema, addCommentSchema, bulkUpdateTaskSchema } from '../validators/task.validator';
 
 const router = Router();
 
@@ -10,7 +10,7 @@ const router = Router();
 router.use(authenticate, requireOrgMembership);
 
 // Bulk operations MUST be before /:id to avoid "bulk" being treated as an ID
-router.put('/bulk', TaskController.bulkUpdate);
+router.put('/bulk', validate(bulkUpdateTaskSchema), TaskController.bulkUpdate);
 router.delete('/bulk', TaskController.bulkDelete);
 
 // Comment and link delete routes (before /:id)

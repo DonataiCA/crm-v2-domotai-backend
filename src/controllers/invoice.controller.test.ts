@@ -36,6 +36,14 @@ beforeEach(() => {
  * ISO-8601 DateTime`, que llega al cliente como un 500 opaco y parece un fallo del
  * endpoint. La conversión toca hacerla aquí, que es donde se conoce el formato de entrada.
  */
+describe('InvoiceController.create — autoría', () => {
+    it('guarda createdBy con el Profile.id, no con el User.id', async () => {
+        await InvoiceController.create(fakeReq({ body: {}, user: { profileId: 'prof-1' } }), fakeRes());
+
+        expect(create.mock.calls[0][0].createdBy).toBe('prof-1');
+    });
+});
+
 describe('InvoiceController.create — fechas', () => {
     it('convierte dueDate en Date antes de llegar a Prisma', async () => {
         await InvoiceController.create(fakeReq({ body: { dueDate: '2026-09-15' } }), fakeRes());

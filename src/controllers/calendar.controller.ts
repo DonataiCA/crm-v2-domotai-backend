@@ -123,7 +123,8 @@ export const CalendarController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { title, description, startDate, endDate, allDay, color, contactId, leadId, projectId } = req.body;
 
             if (!title || !startDate) {
@@ -141,7 +142,7 @@ export const CalendarController = {
                 contactId,
                 leadId,
                 projectId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(event);

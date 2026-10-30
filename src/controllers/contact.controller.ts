@@ -83,11 +83,12 @@ export const ContactController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const contact = await ContactRepository.create({
                 ...req.body,
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(contact);
@@ -172,7 +173,8 @@ export const ContactController = {
     addNote: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { contactId } = req.params;
 
             const contact = await ContactRepository.findById(contactId, orgId);
@@ -181,7 +183,7 @@ export const ContactController = {
             const note = await ContactRepository.addNote({
                 contactId,
                 note: req.body.note,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(note);
@@ -204,7 +206,8 @@ export const ContactController = {
     addFileLink: async (req: Request, res: Response) => {
         try {
             const orgId = (req as any).orgId;
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { contactId } = req.params;
 
             const contact = await ContactRepository.findById(contactId, orgId);
@@ -215,7 +218,7 @@ export const ContactController = {
                 title: req.body.title,
                 url: req.body.url,
                 fileType: req.body.fileType,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(fileLink);

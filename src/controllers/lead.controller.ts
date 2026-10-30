@@ -95,7 +95,8 @@ export const LeadController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
 
             const resolved = await resolveStage(req.body.stage, req.body.pipelineId, orgId);
             if (resolved.error) return sendError(res, 400, resolved.error);
@@ -119,7 +120,7 @@ export const LeadController = {
                 ...req.body,
                 stage,
                 organizationId: orgId,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(lead);
@@ -132,7 +133,7 @@ export const LeadController = {
                     title: `New lead assigned: ${lead.name}`,
                     entityType: 'Lead',
                     entityId: lead.id,
-                    actorId: userId,
+                    actorId: profileId,
                     recipientUserId: lead.assignedTo,
                     metadata: { leadName: lead.name },
                 });
@@ -164,14 +165,14 @@ export const LeadController = {
 
             // Notify on assignment change
             if (req.body.assignedTo && req.body.assignedTo !== existing.assignedTo) {
-                const actor = await prisma.profile.findUnique({ where: { id: (req as any).userId }, select: { fullName: true } });
+                const actor = await prisma.profile.findUnique({ where: { id: (req as any).user?.profileId }, select: { fullName: true } });
                 await notify({
                     organizationId: existing.organizationId,
                     type: 'LEAD_ASSIGNED',
                     title: `Lead assigned: ${lead.name}`,
                     entityType: 'Lead',
                     entityId: lead.id,
-                    actorId: (req as any).userId,
+                    actorId: (req as any).user?.profileId,
                     recipientUserId: req.body.assignedTo,
                     metadata: { leadName: lead.name, assignedBy: actor?.fullName || 'Someone', assigneeName: '' },
                 });
@@ -186,7 +187,7 @@ export const LeadController = {
                     title: `Lead moved to ${stageLabel}: ${lead.name}`,
                     entityType: 'Lead',
                     entityId: lead.id,
-                    actorId: (req as any).userId,
+                    actorId: (req as any).user?.profileId,
                     recipientUserId: existing.assignedTo,
                     metadata: { leadName: lead.name, oldStage: existing.stage, newStage: req.body.stage, assigneeName: '' },
                 });
@@ -214,7 +215,8 @@ export const LeadController = {
         try {
             const orgId = (req as any).orgId;
 
-            const userId = (req as any).userId;
+            // FK a Profile.id: req.userId es el User.id del JWT.
+            const profileId = (req as any).user?.profileId;
             const { leadId } = req.params;
 
             const lead = await LeadRepository.findById(leadId, orgId);
@@ -225,7 +227,7 @@ export const LeadController = {
                 organizationId: orgId,
                 eventType: req.body.eventType,
                 description: req.body.description,
-                createdBy: userId,
+                createdBy: profileId,
             });
 
             res.status(201).json(event);
