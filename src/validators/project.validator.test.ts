@@ -7,6 +7,8 @@ import {
     createPhaseSchema,
     createProjectTaskSchema,
     importTasksSchema,
+    updateProjectTaskSchema,
+    updatePhaseSchema,
 } from './project.validator';
 import {
     MAX_CHAT_MESSAGE_CHARS,
@@ -349,3 +351,64 @@ describe('importTasksSchema', () => {
     });
 });
 
+// Los PUT de tarea y fase no tenían validador: el controlador esparcía req.body
+// en Prisma y un cliente podía reescribir organizationId, projectId o createdBy.
+describe('updateProjectTaskSchema', () => {
+    it('conserva todo lo que manda el frontend (ProjectTaskPayload)', () => {
+        const payload = {
+            title: 'T', description: 'd', conclusion: 'c', status: 'COMPLETED', priority: 'HIGH',
+            phaseId: PHASE_ID, orderIndex: 3, startDate: '2026-10-01', dueDate: '2026-10-05',
+            completedAt: '2026-10-05T12:00:00Z', assignedTo: PHASE_ID, progress: 100,
+        };
+        const result = updateProjectTaskSchema.safeParse(payload);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(payload)) expect(result.data, key).toHaveProperty(key);
+    });
+
+    it('acepta un cambio de estado suelto (arrastre en el Kanban)', () => {
+        const result = updateProjectTaskSchema.safeParse({ status: 'in progress' });
+        expect(result.success && result.data.status).toBe('IN_PROGRESS');
+    });
+
+    it('permite sacar la tarea de su fase con phaseId null', () => {
+        expect(updateProjectTaskSchema.safeParse({ phaseId: null }).success).toBe(true);
+    });
+
+    it('descarta las columnas que solo escribe el servidor', () => {
+        const result = updateProjectTaskSchema.safeParse({
+            title: 'T', organizationId: 'otra', projectId: 'otro', createdBy: 'x',
+            dueReminderSentAt: null, createdByGuest: true,
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        expect(Object.keys(result.data)).toEqual(['title']);
+    });
+
+    it('rechaza un progreso fuera de 0..100 y un estado inventado', () => {
+        expect(updateProjectTaskSchema.safeParse({ progress: 140 }).success).toBe(false);
+        expect(updateProjectTaskSchema.safeParse({ status: 'EN_LIMBO' }).success).toBe(false);
+    });
+});
+
+describe('updatePhaseSchema', () => {
+    it('conserva todo lo que manda el frontend (ProjectPhasePayload)', () => {
+        const payload = {
+            name: 'Phase 1', description: 'd', status: 'completed', orderIndex: 2,
+            startDate: '2026-10-01', endDate: '2026-10-31',
+        };
+        const result = updatePhaseSchema.safeParse(payload);
+        expect(result.success).toBe(true);
+        if (!result.success) return;
+        for (const key of Object.keys(payload)) expect(result.data, key).toHaveProperty(key);
+    });
+
+    it('descarta projectId y createdBy', () => {
+        const result = updatePhaseSchema.safeParse({ name: 'F', projectId: 'otro', createdBy: 'x' });
+        expect(result.success && Object.keys(result.data)).toEqual(['name']);
+    });
+
+    it('rechaza un estado de fase inventado', () => {
+        expect(updatePhaseSchema.safeParse({ status: 'pendiente' }).success).toBe(false);
+    });
+});

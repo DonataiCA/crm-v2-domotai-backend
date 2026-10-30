@@ -10,6 +10,8 @@ import {
     updateProjectSchema,
     createPhaseSchema,
     createProjectTaskSchema,
+    updateProjectTaskSchema,
+    updatePhaseSchema,
     chatTaskSchema,
     importTasksSchema,
     createProjectLinkSchema,
@@ -53,12 +55,12 @@ router.post('/:projectId/import-tasks', validate(importTasksSchema), ProjectCont
 
 // Phases
 router.post('/:projectId/phases', validate(createPhaseSchema), ProjectController.createPhase);
-router.put('/phases/:phaseId', ProjectController.updatePhase);
+router.put('/phases/:phaseId', validate(updatePhaseSchema), ProjectController.updatePhase);
 router.delete('/phases/:phaseId', ProjectController.deletePhase);
 
 // Project Tasks
 router.post('/:projectId/tasks', validate(createProjectTaskSchema), ProjectController.createTask);
-router.put('/project-tasks/:taskId', ProjectController.updateTask);
+router.put('/project-tasks/:taskId', validate(updateProjectTaskSchema), ProjectController.updateTask);
 router.delete('/project-tasks/:taskId', ProjectController.deleteTask);
 
 // Project Task Comments
