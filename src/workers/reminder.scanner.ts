@@ -7,6 +7,11 @@ import { notify } from '../utils/notify';
 const HOUR = 60 * 60 * 1000;
 // "Vence pronto" de tareas: se avisa 24 h antes del dueDate.
 const TASK_DUE_LEAD_MS = 24 * HOUR;
+// Lo ya vencido no es "pronto": la ventana arranca 24 h antes de now. `dueDate` es la
+// medianoche UTC del día de vencimiento, así que con este margen una tarea que vence hoy
+// todavía se avisa, y una que venció hace días no (antes salía toda la que no tuviera
+// marca: importar un cronograma con fechas pasadas mandaba un correo por tarea).
+const TASK_DUE_GRACE_MS = 24 * HOUR;
 // Vencimiento de proyecto: necesita más margen → 3 días antes del endDate.
 const PROJECT_DUE_LEAD_MS = 72 * HOUR;
 // reminderDate y nextFollowUp disparan el mismo día (sin anticipación): <= now.
@@ -19,7 +24,8 @@ const PROJECT_DUE_LEAD_MS = 72 * HOUR;
  *
  * Criterio de disparo por tipo:
  *   - Task.reminderDate  → el mismo día (reminderDate <= now)
- *   - Task/ProjectTask.dueDate → 24 h antes (TASK_DUE_LEAD_MS)
+ *   - Task/ProjectTask.dueDate → 24 h antes (TASK_DUE_LEAD_MS); no si ya venció
+ *     hace más de un día (TASK_DUE_GRACE_MS)
  *   - Project.endDate    → 3 días antes (PROJECT_DUE_LEAD_MS)
  *   - Lead.nextFollowUp  → el día del seguimiento (nextFollowUp <= now)
  *
@@ -29,6 +35,7 @@ const PROJECT_DUE_LEAD_MS = 72 * HOUR;
 export async function scanAndSendReminders(
     now: Date = new Date(),
 ): Promise<{ reminderSent: number; dueSent: number; projectTaskDueSent: number; projectDueSent: number; followUpSent: number }> {
+    const taskDueFrom = new Date(now.getTime() - TASK_DUE_GRACE_MS);
     const taskDueThreshold = new Date(now.getTime() + TASK_DUE_LEAD_MS);
     const projectDueThreshold = new Date(now.getTime() + PROJECT_DUE_LEAD_MS);
 
@@ -51,7 +58,7 @@ export async function scanAndSendReminders(
     }
 
     // 2) Tareas de CRM: "vence pronto" (dueDate dentro de la ventana de 24 h)
-    const dueTasks = await TaskRepository.findDueSoon(taskDueThreshold);
+    const dueTasks = await TaskRepository.findDueSoon(taskDueFrom, taskDueThreshold);
     for (const task of dueTasks) {
         try {
             await sendTaskReminder(task, task.dueDate, 'TASK_DUE_SOON');
@@ -63,7 +70,7 @@ export async function scanAndSendReminders(
     }
 
     // 3) Tareas de PROYECTO: "vence pronto" (dueDate, 24 h) → al asignado
-    const projectTasks = await ProjectRepository.findTasksDueSoon(taskDueThreshold);
+    const projectTasks = await ProjectRepository.findTasksDueSoon(taskDueFrom, taskDueThreshold);
     for (const task of projectTasks) {
         try {
             await sendTaskReminder(task, task.dueDate, 'PROJECT_TASK_DUE_SOON');

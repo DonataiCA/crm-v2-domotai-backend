@@ -175,10 +175,11 @@ export const TaskRepository = {
         }),
 
     // Tareas que entran en la ventana "vence pronto" (dueDate <= umbral) sin avisar.
-    findDueSoon: (threshold: Date) =>
+    /** Tareas cuyo `dueDate` cae en la ventana [from, threshold]: lo vencido hace días no es "pronto". */
+    findDueSoon: (from: Date, threshold: Date) =>
         prisma.task.findMany({
             where: {
-                dueDate: { lte: threshold },
+                dueDate: { gte: from, lte: threshold },
                 dueReminderSentAt: null,
                 assignedTo: { not: null },
                 status: { not: 'COMPLETED' },
