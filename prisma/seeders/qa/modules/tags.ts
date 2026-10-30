@@ -4,10 +4,9 @@ import { ORG_A, P_ADMIN } from '../core';
 import { PT_EN_CURSO, PT_VENCIDA, PT_SIN_FASE } from './projects';
 
 /**
- * Nota de esquema: Tag.nameLower es @unique GLOBAL, no por organización.
- * Por eso solo se siembran etiquetas en la organización A: repetir el mismo
- * nombre en la B provocaría una violación de unicidad. Es un fallo del
- * esquema, no del seed.
+ * Solo se siembran etiquetas en la organización A. Desde la migración
+ * `tag_name_unique_per_org` el nombre es único por organización, así que la B
+ * podría repetirlos; no hace falta para ningún escenario de QA actual.
  */
 export async function seedTags(prisma: PrismaClient): Promise<string> {
     const tags = [

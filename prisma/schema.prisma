@@ -593,7 +593,8 @@ model TaskDeliverable {
 model Tag {
   id             String    @id @default(uuid())
   name           String
-  nameLower      String    @unique // lowercase normalized for uniqueness
+  // Nombre en minúsculas: único dentro de la organización (no en toda la base).
+  nameLower      String
   color          String?
   organizationId String
   createdBy      String?
@@ -604,6 +605,7 @@ model Tag {
 
   taskTags     ProjectTaskTag[]
 
+  @@unique([organizationId, nameLower])
   @@map("tags")
 }
 
